@@ -1,5 +1,8 @@
 from fastapi import FastAPI
 import sqlite3
+from pydantic import BaseModel
+from typing import List, Optional
+
 
 # Create an instance of FastAPI
 app = FastAPI()
@@ -87,33 +90,42 @@ def init_db():
 # Call the function to initialize the database
 init_db()
 
+# Pydantic model for Project
+class Project(BaseModel):
+    id: int
+    name: str
+    status: str
 
-# Define a route with a path "/"
-@app.get("/")
-def read_root():
-    return {"message": "Hello, World!"}
+
+# Pydantic model for Dataset
+class Dataset(BaseModel):
+    id: int
+    project_id: int
+    name: str
+
+
+
+
 
 # Route to fetch all projects and their statuses
-@app.get("/projects/")
+@app.get("/projects/", response_model=List[Project])
 async def get_projects():
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, status FROM projects")
-    projects = cursor.fetchall()
+    rows = cursor.fetchall()
     conn.close()
-    return projects
+    return [Project(id=row[0], name=row[1], status=row[2]) for row in rows]
 
-# Route to fetch all projects and their statuses
-@app.get("/datasets/")
+# Route to fetch all datasets
+@app.get("/datasets/", response_model=List[Dataset])
 async def get_datasets():
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     cursor.execute("SELECT id, project_id, name FROM datasets")
-    projects = cursor.fetchall()
+    rows = cursor.fetchall()
     conn.close()
-    return projects
-
-
+    return [Dataset(id=row[0], project_id=row[1], name=row[2]) for row in rows]
 
 # Run the app using Uvicorn server
 if __name__ == "__main__":
