@@ -93,6 +93,28 @@ init_db()
 def read_root():
     return {"message": "Hello, World!"}
 
+# Route to fetch all projects and their statuses
+@app.get("/projects/")
+async def get_projects():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, status FROM projects")
+    projects = cursor.fetchall()
+    conn.close()
+    return projects
+
+# Route to fetch all projects and their statuses
+@app.get("/datasets/")
+async def get_datasets():
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, project_id, name FROM datasets")
+    projects = cursor.fetchall()
+    conn.close()
+    return projects
+
+
+
 # Run the app using Uvicorn server
 if __name__ == "__main__":
     import uvicorn
