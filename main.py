@@ -154,19 +154,32 @@ class Sample(BaseModel):
 
 # Route to fetch all patients and their metadata for a project_id
 @app.get("/patients_metadata/{project_id}", response_model=List[PatientWithMetadata])
-async def get_patients_metadata(project_id: int):
+async def get_patients_metadata(project_id: int,patient_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
-                   pm.id, pm.key, pm.value
-            FROM patients p
-            LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
-            WHERE p.project_id = ?
-            ORDER BY p.id
-        ''', (project_id,))
+
+        if patient_id != 0:
+
+            cursor.execute('''
+                SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
+                       pm.id, pm.key, pm.value
+                FROM patients p
+                LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
+                WHERE p.project_id = ? and p.id = ?
+                ORDER BY p.id
+            ''', (project_id,patient_id,))
+        else:
+    
+            cursor.execute('''
+                SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
+                       pm.id, pm.key, pm.value
+                FROM patients p
+                LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
+                WHERE p.project_id = ?
+                ORDER BY p.id
+            ''', (project_id,))
 
         rows = cursor.fetchall()
         conn.close()
