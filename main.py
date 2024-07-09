@@ -202,9 +202,11 @@ async def get_project_patients(project_id: int):
 
 
 
+
+
 # Route to fetch all samples and metadata for a patient_id
-@app.get("/samples/{patient_id}", response_model=List[Sample])
-def get_samples_per_patient(patient_id: int):
+@app.get("/samples/{project_id}", response_model=List[Sample])
+def get_samples_per_patient(project_id: int, patient_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
