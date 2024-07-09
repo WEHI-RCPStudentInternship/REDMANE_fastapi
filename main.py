@@ -207,21 +207,35 @@ async def get_patients_metadata(project_id: int):
 
 # Route to fetch all samples and metadata for a project_id and include patient information
 @app.get("/samples/{project_id}", response_model=List[Sample])
-async def get_samples_per_project(project_id: int):
+async def get_samples_per_patient(project_id: int, patient_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
 
-        cursor.execute('''
-            SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
-                   sm.id AS metadata_id, sm.key, sm.value,
-                   p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
-            FROM samples s
-            LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
-            LEFT JOIN patients p ON s.patient_id = p.id
-            WHERE p.project_id = ?
-            ORDER BY s.id, sm.id
-        ''', (project_id,))
+        if patient_id != 0:
+            cursor.execute('''
+                SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
+                       sm.id AS metadata_id, sm.key, sm.value,
+                       p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
+                FROM samples s
+                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
+                LEFT JOIN patients p ON s.patient_id = p.id
+                WHERE p.project_id = ? and p.id = ?
+                ORDER BY s.id, sm.id
+            ''', (project_id,patient_id,))
+        else:
+            cursor.execute('''
+                SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
+                       sm.id AS metadata_id, sm.key, sm.value,
+                       p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
+                FROM samples s
+                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
+                LEFT JOIN patients p ON s.patient_id = p.id
+                WHERE p.project_id = ?
+                ORDER BY s.id, sm.id
+            ''', (project_id,))
+ 
+
 
         rows = cursor.fetchall()
         conn.close()
