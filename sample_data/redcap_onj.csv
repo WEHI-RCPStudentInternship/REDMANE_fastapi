@@ -1,0 +1,5 @@
+record_id,age_range,smoking,control
+HEFT 3223,25-34,no,yes
+HUFT 7876,35-44,yes,no  
+ABYZ 1234,45-54,no,yes
+QWER 5678,55-64,yes,no
