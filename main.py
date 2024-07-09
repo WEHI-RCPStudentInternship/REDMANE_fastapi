@@ -258,8 +258,8 @@ def get_samples_per_patient(patient_id: int):
 
 
 # Route to fetch all patients with sample counts
-@app.get("/patients/", response_model=List[PatientWithSampleCount])
-async def get_patients():
+@app.get("/patients/{project_id}", response_model=List[PatientWithSampleCount])
+async def get_patients(project_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
@@ -270,9 +270,11 @@ async def get_patients():
                    patients.public_patient_id, COUNT(samples.id) AS sample_count
             FROM patients
             LEFT JOIN samples ON patients.id = samples.patient_id
+            WHERE patients.project_id = ?
             GROUP BY patients.id
             ORDER BY patients.id
-        ''')
+        ''', (project_id,))
+
         
         rows = cursor.fetchall()
         conn.close()
@@ -306,12 +308,14 @@ async def get_projects():
     conn.close()
     return [Project(id=row[0], name=row[1], status=row[2]) for row in rows]
 
+
 # Route to fetch all datasets
-@app.get("/datasets/", response_model=List[Dataset])
-async def get_datasets():
+@app.get("/datasets/{project_id}", response_model=List[Dataset])
+async def get_datasets(project_id: int):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, project_id, name FROM datasets")
+    cursor.execute('''SELECT id, project_id, name FROM datasets where project_id = ?''', (project_id,))
+
     rows = cursor.fetchall()
     conn.close()
     return [Dataset(id=row[0], project_id=row[1], name=row[2]) for row in rows]
