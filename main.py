@@ -108,7 +108,51 @@ class Dataset(BaseModel):
     name: str
 
 
+# Pydantic model for Patient
+class Patient(BaseModel):
+    id: int
+    project_id: int
+    ext_patient_id: str
+    ext_patient_url: str
+    public_patient_id: Optional[str]
+    sample_count: int
 
+# Route to fetch all patients with sample counts
+@app.get("/patients/", response_model=List[Patient])
+async def get_patients():
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        
+        # Query to fetch all patients with sample counts
+        cursor.execute('''
+            SELECT patients.id, patients.project_id, patients.ext_patient_id, patients.ext_patient_url,
+                   patients.public_patient_id, COUNT(samples.id) AS sample_count
+            FROM patients
+            LEFT JOIN samples ON patients.id = samples.patient_id
+            GROUP BY patients.id
+            ORDER BY patients.id
+        ''')
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Convert rows to List[Patient] response
+        patients = []
+        for row in rows:
+            patients.append({
+                'id': row[0],
+                'project_id': row[1],
+                'ext_patient_id': row[2],
+                'ext_patient_url': row[3],
+                'public_patient_id': row[4],
+                'sample_count': row[5]
+            })
+        
+        return patients
+    
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
 # Route to fetch all projects and their statuses
