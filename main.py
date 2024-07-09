@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import sqlite3
 from pydantic import BaseModel
 from typing import List, Optional
@@ -14,7 +14,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
-
 
 DATABASE = 'data/data_redmane.db'
 
@@ -88,11 +87,11 @@ def init_db():
 
     cur.execute('''
     CREATE TABLE IF NOT EXISTS raw_files_metadata (
-	metadata_id INTEGER PRIMARY KEY AUTOINCREMENT,
-	raw_file_id INTEGER,
-	metadata_key TEXT NOT NULL,
-	metadata_value TEXT NOT NULL,
-	FOREIGN KEY (raw_file_id) REFERENCES raw_files (id)
+        metadata_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        raw_file_id INTEGER,
+        metadata_key TEXT NOT NULL,
+        metadata_value TEXT NOT NULL,
+        FOREIGN KEY (raw_file_id) REFERENCES raw_files (id)
     );
     ''')
 
@@ -108,13 +107,11 @@ class Project(BaseModel):
     name: str
     status: str
 
-
 # Pydantic model for Dataset
 class Dataset(BaseModel):
     id: int
     project_id: int
     name: str
-
 
 # Pydantic model for Patient
 class Patient(BaseModel):
@@ -153,6 +150,7 @@ class Sample(BaseModel):
     ext_sample_id: str
     ext_sample_url: str
     metadata: List[SampleMetadata] = []
+    patient: Patient
 
 # Route to fetch all patients and their metadata for a project_id
 @app.get("/patients_metadata/{project_id}", response_model=List[PatientWithMetadata])
@@ -207,32 +205,27 @@ async def get_patients_metadata(project_id: int):
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-
-
-
-
-
-# Route to fetch all samples and metadata for a patient_id
+# Route to fetch all samples and metadata for a project_id and include patient information
 @app.get("/samples/{project_id}", response_model=List[Sample])
-def get_samples_per_patient(project_id: int, patient_id: int):
+async def get_samples_per_project(project_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
-        
-        # Query to fetch all samples and their metadata for a patient_id
+
         cursor.execute('''
             SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
-                   sm.id AS metadata_id, sm.key, sm.value
+                   sm.id AS metadata_id, sm.key, sm.value,
+                   p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
             FROM samples s
             LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
-            WHERE s.patient_id = ?
+            LEFT JOIN patients p ON s.patient_id = p.id
+            WHERE p.project_id = ?
             ORDER BY s.id, sm.id
-        ''', (patient_id,))
-        
+        ''', (project_id,))
+
         rows = cursor.fetchall()
         conn.close()
-        
-        # Convert rows to List[Sample] response
+
         samples = []
         current_sample = None
         for row in rows:
@@ -244,9 +237,16 @@ def get_samples_per_patient(project_id: int, patient_id: int):
                     'patient_id': row[1],
                     'ext_sample_id': row[2],
                     'ext_sample_url': row[3],
-                    'metadata': []
+                    'metadata': [],
+                    'patient': {
+                        'id': row[7],
+                        'project_id': row[8],
+                        'ext_patient_id': row[9],
+                        'ext_patient_url': row[10],
+                        'public_patient_id': row[11]
+                    }
                 }
-            
+
             if row[4]:  # Check if metadata exists
                 current_sample['metadata'].append({
                     'id': row[4],
@@ -254,18 +254,14 @@ def get_samples_per_patient(project_id: int, patient_id: int):
                     'key': row[5],
                     'value': row[6]
                 })
-        
-        # Append the last sample
+
         if current_sample:
             samples.append(current_sample)
-        
+
         return samples
-    
+
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-
-
 
 # Route to fetch all patients with sample counts
 @app.get("/patients/{project_id}", response_model=List[PatientWithSampleCount])
@@ -289,7 +285,6 @@ async def get_patients(project_id: int):
         rows = cursor.fetchall()
         conn.close()
         
-        # Convert rows to List[Patient] response
         patients = []
         for row in rows:
             patients.append({
@@ -306,8 +301,6 @@ async def get_patients(project_id: int):
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-
-
 # Route to fetch all projects and their statuses
 @app.get("/projects/", response_model=List[Project])
 async def get_projects():
@@ -317,7 +310,6 @@ async def get_projects():
     rows = cursor.fetchall()
     conn.close()
     return [Project(id=row[0], name=row[1], status=row[2]) for row in rows]
-
 
 # Route to fetch all datasets
 @app.get("/datasets/{project_id}", response_model=List[Dataset])
