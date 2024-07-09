@@ -54,11 +54,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         patient_id INTEGER NOT NULL,
         ext_sample_id TEXT,
-        ext_sample_org TEXT,
-        ext_org_batch TEXT,
-        tissue TEXT,
-        sample_date TEXT,
-        internal_batch TEXT,
+        ext_sample_url TEXT,
         FOREIGN KEY (patient_id) REFERENCES patients(id)
     );
     ''')
