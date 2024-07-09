@@ -2,10 +2,18 @@ from fastapi import FastAPI
 import sqlite3
 from pydantic import BaseModel
 from typing import List, Optional
+from fastapi.middleware.cors import CORSMiddleware
 
-
-# Create an instance of FastAPI
 app = FastAPI()
+
+# Allow all origins (for development, consider restricting to specific origins in production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3001"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
+)
 
 
 DATABASE = 'data/data_redmane.db'
