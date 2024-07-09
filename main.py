@@ -78,9 +78,17 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dataset_id INTEGER NOT NULL,
         directory TEXT,
-        sample_id INTEGER,
-        FOREIGN KEY (dataset_id) REFERENCES datasets(id),
-        FOREIGN KEY (sample_id) REFERENCES samples(id)
+        FOREIGN KEY (dataset_id) REFERENCES datasets(id)
+    );
+    ''')
+
+    cur.execute('''
+    CREATE TABLE IF NOT EXISTS raw_files_metadata (
+	metadata_id INTEGER PRIMARY KEY AUTOINCREMENT,
+	raw_file_id INTEGER,
+	metadata_key TEXT NOT NULL,
+	metadata_value TEXT NOT NULL,
+	FOREIGN KEY (raw_file_id) REFERENCES raw_files (id)
     );
     ''')
 
