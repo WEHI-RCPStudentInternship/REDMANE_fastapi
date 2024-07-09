@@ -155,8 +155,8 @@ class Sample(BaseModel):
     metadata: List[SampleMetadata] = []
 
 # Route to fetch all patients and their metadata for a project_id
-@app.get("/project_patients/{project_id}", response_model=List[PatientWithMetadata])
-async def get_project_patients(project_id: int):
+@app.get("/patients_metadata/{project_id}", response_model=List[PatientWithMetadata])
+async def get_patients_metadata(project_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
