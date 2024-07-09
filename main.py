@@ -115,8 +115,21 @@ class Patient(BaseModel):
     ext_patient_id: str
     ext_patient_url: str
     public_patient_id: Optional[str]
+
+# Pydantic model for Patient with sample count
+class PatientWithSampleCount(Patient):
     sample_count: int
 
+# Pydantic model for PatientMetadata
+class PatientMetadata(BaseModel):
+    id: int
+    patient_id: int
+    key: str
+    value: str
+
+# Pydantic model for Patient with Metadata
+class PatientWithMetadata(Patient):
+    metadata: List[PatientMetadata] = []
 
 # Pydantic model for SampleMetadata
 class SampleMetadata(BaseModel):
@@ -132,6 +145,62 @@ class Sample(BaseModel):
     ext_sample_id: str
     ext_sample_url: str
     metadata: List[SampleMetadata] = []
+
+# Route to fetch all patients and their metadata for a project_id
+@app.get("/project_patients/{project_id}", response_model=List[PatientWithMetadata])
+async def get_project_patients(project_id: int):
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
+                   pm.id, pm.key, pm.value
+            FROM patients p
+            LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
+            WHERE p.project_id = ?
+            ORDER BY p.id
+        ''', (project_id,))
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        patients = []
+        current_patient = None
+        for row in rows:
+
+            if not current_patient or current_patient['id'] != row[0]:
+
+                if current_patient:
+                    patients.append(current_patient)
+
+                current_patient = {
+                    'id': row[0],
+                    'project_id': row[1],
+                    'ext_patient_id': row[2],
+                    'ext_patient_url': row[3],
+                    'public_patient_id': row[4],
+                    'metadata': [] 
+                }
+
+            if row[5]:
+                current_patient['metadata'].append({
+                    'id': row[5],
+                    'patient_id': row[0],
+                    'key': row[6],
+                    'value': row[7]
+                })
+
+        if current_patient:
+            patients.append(current_patient)
+
+        return patients
+
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+
 
 # Route to fetch all samples and metadata for a patient_id
 @app.get("/samples/{patient_id}", response_model=List[Sample])
@@ -189,7 +258,7 @@ def get_samples_per_patient(patient_id: int):
 
 
 # Route to fetch all patients with sample counts
-@app.get("/patients/", response_model=List[Patient])
+@app.get("/patients/", response_model=List[PatientWithSampleCount])
 async def get_patients():
     try:
         conn = sqlite3.connect(DATABASE)
