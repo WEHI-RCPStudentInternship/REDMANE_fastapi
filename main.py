@@ -291,22 +291,35 @@ async def get_samples_per_patient(project_id: int, patient_id: int):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 # Route to fetch all patients with sample counts
-@app.get("/patients/{project_id}", response_model=List[PatientWithSampleCount])
-async def get_patients(project_id: int):
+@app.get("/patients/{patient_id}", response_model=List[PatientWithSampleCount])
+async def get_patients(project_id: int,patient_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
+
+        if patient_id != 0:
         
-        # Query to fetch all patients with sample counts
-        cursor.execute('''
-            SELECT patients.id, patients.project_id, patients.ext_patient_id, patients.ext_patient_url,
-                   patients.public_patient_id, COUNT(samples.id) AS sample_count
-            FROM patients
-            LEFT JOIN samples ON patients.id = samples.patient_id
-            WHERE patients.project_id = ?
-            GROUP BY patients.id
-            ORDER BY patients.id
-        ''', (project_id,))
+            # Query to fetch all patients with sample counts
+            cursor.execute('''
+                SELECT patients.id, patients.project_id, patients.ext_patient_id, patients.ext_patient_url,
+                       patients.public_patient_id, COUNT(samples.id) AS sample_count
+                FROM patients
+                LEFT JOIN samples ON patients.id = samples.patient_id
+                WHERE patients.project_id = ? and patients.id = ?
+                GROUP BY patients.id
+                ORDER BY patients.id
+            ''', (project_id,patient_id,))
+        else:
+            # Query to fetch all patients with sample counts
+            cursor.execute('''
+                SELECT patients.id, patients.project_id, patients.ext_patient_id, patients.ext_patient_url,
+                       patients.public_patient_id, COUNT(samples.id) AS sample_count
+                FROM patients
+                LEFT JOIN samples ON patients.id = samples.patient_id
+                WHERE patients.project_id = ?
+                GROUP BY patients.id
+                ORDER BY patients.id
+            ''', (project_id,))
 
         
         rows = cursor.fetchall()
@@ -339,11 +352,15 @@ async def get_projects():
     return [Project(id=row[0], name=row[1], status=row[2]) for row in rows]
 
 # Route to fetch all datasets
-@app.get("/datasets/{project_id}", response_model=List[Dataset])
-async def get_datasets(project_id: int):
+@app.get("/datasets/{dataset_id}", response_model=List[Dataset])
+async def get_datasets(dataset_id: int, project_id: int):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('''SELECT id, project_id, name FROM datasets where project_id = ?''', (project_id,))
+    if dataset_id != 0:
+        cursor.execute('''SELECT id, project_id, name FROM datasets where project_id = ? and dataset_id = ?''', (project_id,dataset_id,))
+    else:
+        cursor.execute('''SELECT id, project_id, name FROM datasets where project_id = ?''', (project_id,))
+
 
     rows = cursor.fetchall()
     conn.close()
