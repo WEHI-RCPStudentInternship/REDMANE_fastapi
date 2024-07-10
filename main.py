@@ -123,6 +123,16 @@ class Dataset(BaseModel):
     project_id: int
     name: str
 
+class DatasetMetadata(BaseModel):
+    id: int
+    dataset_id: int
+    key: str
+    value: str
+
+class DatasetWithMetadata(Dataset):
+    metadata: List[DatasetMetadata] = []
+
+
 # Pydantic model for Patient
 class Patient(BaseModel):
     id: int
@@ -413,6 +423,49 @@ async def get_datasets(dataset_id: int, project_id: int):
     rows = cursor.fetchall()
     conn.close()
     return [Dataset(id=row[0], project_id=row[1], name=row[2]) for row in rows]
+
+
+# Endpoint to fetch dataset details and metadata by dataset_id
+@app.get("/datasets_with_metadata/{dataset_id}", response_model=DatasetWithMetadata)
+async def get_dataset_with_metadata(dataset_id: int, project_id: int):
+    try:
+        conn = sqlite3.connect(DATABASE)
+        cursor = conn.cursor()
+        
+        # Fetch dataset details
+        cursor.execute('''
+            SELECT id, project_id, name
+            FROM datasets
+            WHERE id = ? AND project_id = ?
+        ''', (dataset_id, project_id))
+        dataset_row = cursor.fetchone()
+        
+        if not dataset_row:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
+        # Fetch dataset metadata
+        cursor.execute('''
+            SELECT id, dataset_id, key, value
+            FROM dataset_metadata
+            WHERE dataset_id = ?
+        ''', (dataset_id,))
+        metadata_rows = cursor.fetchall()
+        
+        conn.close()
+        
+        dataset = {
+            "id": dataset_row[0],
+            "project_id": dataset_row[1],
+            "name": dataset_row[2],
+            "metadata": [{"id": row[0], "dataset_id": row[1], "key": row[2], "value": row[3]} for row in metadata_rows]
+        }
+
+        return dataset
+
+    except sqlite3.Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 
 # Run the app using Uvicorn server
 if __name__ == "__main__":
