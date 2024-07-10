@@ -38,7 +38,7 @@ def init_db():
     ''')
 
     cur.execute('''
-    CREATE TABLE IF NOT EXISTS dataset_metadata (
+    CREATE TABLE IF NOT EXISTS datasets_metadata (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dataset_id INTEGER NOT NULL,
         key TEXT NOT NULL,
@@ -446,7 +446,7 @@ async def get_dataset_with_metadata(dataset_id: int, project_id: int):
         # Fetch dataset metadata
         cursor.execute('''
             SELECT id, dataset_id, key, value
-            FROM dataset_metadata
+            FROM datasets_metadata
             WHERE dataset_id = ?
         ''', (dataset_id,))
         metadata_rows = cursor.fetchall()
