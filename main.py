@@ -36,6 +36,16 @@ def init_db():
         FOREIGN KEY (project_id) REFERENCES projects(id)
     );
     ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS dataset_metadata (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dataset_id INTEGER NOT NULL,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL
+    );
+    ''')
+
     cur.execute('''
     CREATE TABLE IF NOT EXISTS patients (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
