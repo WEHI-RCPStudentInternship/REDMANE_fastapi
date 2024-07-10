@@ -152,8 +152,23 @@ class Sample(BaseModel):
     metadata: List[SampleMetadata] = []
     patient: Patient
 
+# Pydantic model for SampleWithoutPatient
+class SampleWithoutPatient(BaseModel):
+    id: int
+    patient_id: int
+    ext_sample_id: str
+    ext_sample_url: str
+    metadata: List[SampleMetadata] = []
+
+
+
+# Pydantic model for Patient with Samples
+class PatientWithSamples(PatientWithMetadata):
+    samples: List[SampleWithoutPatient] = []
+
+
 # Route to fetch all patients and their metadata for a project_id
-@app.get("/patients_metadata/{patient_id}", response_model=List[PatientWithMetadata])
+@app.get("/patients_metadata/{patient_id}", response_model=List[PatientWithSamples])
 async def get_patients_metadata(project_id: int,patient_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
@@ -182,7 +197,6 @@ async def get_patients_metadata(project_id: int,patient_id: int):
             ''', (project_id,))
 
         rows = cursor.fetchall()
-        conn.close()
 
         patients = []
         current_patient = None
@@ -199,6 +213,7 @@ async def get_patients_metadata(project_id: int,patient_id: int):
                     'ext_patient_id': row[2],
                     'ext_patient_url': row[3],
                     'public_patient_id': row[4],
+                    'samples': [],
                     'metadata': [] 
                 }
 
@@ -212,6 +227,42 @@ async def get_patients_metadata(project_id: int,patient_id: int):
 
         if current_patient:
             patients.append(current_patient)
+
+
+        for patient in patients:
+            cursor.execute('''
+                SELECT s.id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
+                       sm.id, sm.key, sm.value
+                FROM samples s
+                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
+                WHERE s.patient_id = ?
+                ORDER BY s.id
+            ''', (patient['id'],))
+
+            sample_rows = cursor.fetchall()
+            current_sample = None
+            for sample_row in sample_rows:
+                if not current_sample or current_sample['id'] != sample_row[0]:
+                    if current_sample:
+                        patient['samples'].append(current_sample)
+                    current_sample = {
+                        'id': sample_row[0],
+                        'patient_id': sample_row[1],
+                        'ext_sample_id': sample_row[2],
+                        'ext_sample_url': sample_row[3],
+                        'metadata': []
+                    }
+                if sample_row[4]:
+                    current_sample['metadata'].append({
+                        'id': sample_row[4],
+                        'sample_id': sample_row[0],
+                        'key': sample_row[5],
+                        'value': sample_row[6]
+                    })
+            if current_sample:
+                patient['samples'].append(current_sample)
+
+        conn.close()
 
         return patients
 
@@ -292,34 +343,21 @@ async def get_samples_per_patient(sample_id: int, project_id: int):
 
 # Route to fetch all patients with sample counts
 @app.get("/patients/{patient_id}", response_model=List[PatientWithSampleCount])
-async def get_patients(project_id: int,patient_id: int):
+async def get_patients(project_id: int, patient_id: int):
     try:
         conn = sqlite3.connect(DATABASE)
         cursor = conn.cursor()
 
-        if patient_id != 0:
-        
-            # Query to fetch all patients with sample counts
-            cursor.execute('''
-                SELECT patients.id, patients.project_id, patients.ext_patient_id, patients.ext_patient_url,
-                       patients.public_patient_id, COUNT(samples.id) AS sample_count
-                FROM patients
-                LEFT JOIN samples ON patients.id = samples.patient_id
-                WHERE patients.project_id = ? and patients.id = ?
-                GROUP BY patients.id
-                ORDER BY patients.id
-            ''', (project_id,patient_id,))
-        else:
-            # Query to fetch all patients with sample counts
-            cursor.execute('''
-                SELECT patients.id, patients.project_id, patients.ext_patient_id, patients.ext_patient_url,
-                       patients.public_patient_id, COUNT(samples.id) AS sample_count
-                FROM patients
-                LEFT JOIN samples ON patients.id = samples.patient_id
-                WHERE patients.project_id = ?
-                GROUP BY patients.id
-                ORDER BY patients.id
-            ''', (project_id,))
+        # Query to fetch all patients with sample counts
+        cursor.execute('''
+            SELECT patients.id, patients.project_id, patients.ext_patient_id, patients.ext_patient_url,
+                   patients.public_patient_id, COUNT(samples.id) AS sample_count
+            FROM patients
+            LEFT JOIN samples ON patients.id = samples.patient_id
+            WHERE patients.project_id = ?
+            GROUP BY patients.id
+            ORDER BY patients.id
+        ''', (project_id,))
 
         
         rows = cursor.fetchall()
