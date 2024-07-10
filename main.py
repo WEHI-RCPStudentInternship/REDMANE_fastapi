@@ -37,7 +37,7 @@ def init_db():
     );
     ''')
 
-    cursor.execute('''
+    cur.execute('''
     CREATE TABLE IF NOT EXISTS dataset_metadata (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dataset_id INTEGER NOT NULL,
