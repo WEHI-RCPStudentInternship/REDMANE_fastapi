@@ -114,16 +114,23 @@ if sample_info_stored == "header":
     # Print the found files
     for file in found_files:
         print("=============================")
-        status = "Not found"
+        try:
+            with open(file, 'r') as file:
+                header = file.readline().strip()
+        except Exception as e:
+            print(f"Error reading file {filename}: {e}")
 
-        print(file)
-        print(status)
+        components = re.split(r'\s+', header.strip())
+        for data in sample_data:
+            if data["ext_sample_id"] in components:
+                status = "sample_found"
+                print(data["ext_sample_id"])
+                print(status)
 
 
 if sample_info_stored == "filename":
     # Print the found files
     for file in found_files:
-        print("=============================")
         status = "Not found"
         for data in sample_data:
             if data["ext_sample_id"] in file:
