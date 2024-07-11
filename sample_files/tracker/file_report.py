@@ -20,6 +20,20 @@ def find_files(directory, extension=".fastq"):
                 matches.append(os.path.join(root, file))
     return matches
 
+def get_dataset_metadata(url):
+    response = requests.get(url)
+    response.raise_for_status()  # Raise an error for bad status codes
+    dataset = response.json()
+
+    result = {}
+    for metadata in dataset["metadata"]:
+        if metadata["key"] == "sample_info_stored":
+            result["sample_info_stored"] = metadata["value"]
+        if metadata["key"] == "raw_file_extensions":
+            result["raw_file_extensions"] = metadata["value"]
+
+    return result
+
 def get_sample_data(url):
     """
     Fetch sample data from the given URL and extract ext_sample_id and patient_id.
@@ -67,24 +81,43 @@ def check_patient_in_filename(filename, ext_patient_id):
 parser = argparse.ArgumentParser(description='Search for patient or sample IDs in file names.')
 parser.add_argument('--directory', type=str, help='The root directory to search')
 parser.add_argument('--dataset_id', type=int, required=True, help='The dataset ID to use')
+parser.add_argument('--project_id', type=int, required=True, help='The project ID to use')
 args = parser.parse_args()
 
 directory_to_search = args.directory
+dataset_id = args.dataset_id
+project_id = args.project_id
 
-# Example usage
-raw_file_extensions = "*.fastq"  # Example extension
-sample_info_stored = "filename"  # Example extension
+print(args)
 
 
+# Get sample data
+url = "http://localhost:8888/samples/0?project_id="+str(project_id)
+sample_data = get_sample_data(url)
 
+url = "http://localhost:8888/datasets_with_metadata/"+str(dataset_id)+"?project_id="+str(project_id)
+dataset_metadata = get_dataset_metadata(url)
+
+sample_info_stored = dataset_metadata["sample_info_stored"]
+raw_file_extensions = dataset_metadata["raw_file_extensions"]
 extension = raw_file_extensions.lstrip("*")  # Remove the asterisk to get the actual extension
+
+
+print(sample_data)
+print(dataset_metadata)
+print("=============================")
 
 # Find files
 found_files = find_files(directory_to_search, extension)
 
-# Get sample data
-url = "http://localhost:8888/samples/0?project_id=1"
-sample_data = get_sample_data(url)
+if sample_info_stored == "header":
+    # Print the found files
+    for file in found_files:
+        print("=============================")
+        status = "Not found"
+
+        print(file)
+        print(status)
 
 
 if sample_info_stored == "filename":
