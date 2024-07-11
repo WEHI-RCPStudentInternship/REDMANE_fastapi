@@ -1,6 +1,8 @@
 import os,re
 import requests
 import argparse
+import subprocess
+import platform
 
 def find_files(directory, extension=".fastq"):
     """
@@ -102,6 +104,24 @@ sample_info_stored = dataset_metadata["sample_info_stored"]
 raw_file_extensions = dataset_metadata["raw_file_extensions"]
 extension = raw_file_extensions.lstrip("*")  # Remove the asterisk to get the actual extension
 
+# Run the command and capture the output
+# Check the operating system
+os_type = platform.system()
+
+if os_type == 'Linux':
+    command = ['du', '--max-depth=1', '-m', directory_to_search]
+elif os_type == 'Darwin':  # macOS
+    command = ['du', '-d', '1', '-m', directory_to_search]
+else:
+    raise OSError(f"Unsupported operating system: {os_type}")
+
+result = subprocess.run(command, capture_output=True, text=True)
+
+# Print the output
+print("-------------------")
+print(directory_to_search)
+print(result.stdout)
+print("-------------------")
 
 # Find files
 found_files = find_files(directory_to_search, extension)
