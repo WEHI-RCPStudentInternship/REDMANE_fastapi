@@ -67,6 +67,7 @@ def check_patient_in_filename(filename, ext_patient_id):
 # Example usage
 directory_to_search = "."  # Replace with your directory path
 raw_file_extensions = "*.fastq"  # Example extension
+sample_info_stored = "filename"  # Example extension
 extension = raw_file_extensions.lstrip("*")  # Remove the asterisk to get the actual extension
 
 # Find files
@@ -77,16 +78,16 @@ url = "http://localhost:8888/samples/0?project_id=1"
 sample_data = get_sample_data(url)
 
 
+if sample_info_stored == "filename":
+    # Print the found files
+    for file in found_files:
+        print("=============================")
+        status = "Not found"
+        for data in sample_data:
+            if data["ext_sample_id"] in file:
+                status = "sample_found"
+            elif check_patient_in_filename(file, data["ext_patient_id"]):
+                status = "patient_found"
 
-# Print the found files
-for file in found_files:
-    print("=============================")
-    status = "Not found"
-    for data in sample_data:
-        if data["ext_sample_id"] in file:
-            status = "sample_found"
-        elif check_patient_in_filename(file, data["ext_patient_id"]):
-            status = "patient_found"
-
-    print(file)
-    print(status)
+        print(file)
+        print(status)
