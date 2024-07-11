@@ -103,17 +103,14 @@ raw_file_extensions = dataset_metadata["raw_file_extensions"]
 extension = raw_file_extensions.lstrip("*")  # Remove the asterisk to get the actual extension
 
 
-print(sample_data)
-print(dataset_metadata)
-print("=============================")
-
 # Find files
 found_files = find_files(directory_to_search, extension)
+
+update_database_json = [] 
 
 if sample_info_stored == "header":
     # Print the found files
     for file in found_files:
-        print("=============================")
         try:
             with open(file, 'r') as file:
                 header = file.readline().strip()
@@ -124,9 +121,8 @@ if sample_info_stored == "header":
         for data in sample_data:
             if data["ext_sample_id"] in components:
                 status = "sample_found"
-                print(data["ext_sample_id"])
-                print(status)
-
+                update_database_json.append({"raw_file": file.name,"sample_id":data["sample_id"],"dataset_id":dataset_id,"project_id":project_id})
+                
 
 if sample_info_stored == "filename":
     # Print the found files
@@ -134,9 +130,11 @@ if sample_info_stored == "filename":
         status = "Not found"
         for data in sample_data:
             if data["ext_sample_id"] in file:
-                status = "sample_found"
+                update_database_json.append({"raw_file": file,"sample_id":data["sample_id"],"dataset_id":dataset_id,"project_id":project_id})
             elif check_patient_in_filename(file, data["ext_patient_id"]):
                 status = "patient_found"
+                update_database_json.append({"raw_file": file,"sample_id":'', "patient_id": data["ext_patient_id"],"dataset_id":dataset_id,"project_id":project_id})
+                break
 
-        print(file)
-        print(status)
+
+print(update_database_json)
