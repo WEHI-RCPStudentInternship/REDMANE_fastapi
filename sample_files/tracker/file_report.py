@@ -1,5 +1,6 @@
 import os,re
 import requests
+import argparse
 
 def find_files(directory, extension=".fastq"):
     """
@@ -63,11 +64,19 @@ def check_patient_in_filename(filename, ext_patient_id):
     
     return False
 
+parser = argparse.ArgumentParser(description='Search for patient or sample IDs in file names.')
+parser.add_argument('--directory', type=str, help='The root directory to search')
+parser.add_argument('--dataset_id', type=int, required=True, help='The dataset ID to use')
+args = parser.parse_args()
+
+directory_to_search = args.directory
 
 # Example usage
-directory_to_search = "."  # Replace with your directory path
 raw_file_extensions = "*.fastq"  # Example extension
 sample_info_stored = "filename"  # Example extension
+
+
+
 extension = raw_file_extensions.lstrip("*")  # Remove the asterisk to get the actual extension
 
 # Find files
