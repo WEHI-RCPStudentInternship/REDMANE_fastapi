@@ -91,6 +91,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         dataset_id INTEGER NOT NULL,
         path TEXT,
+        UNIQUE(dataset_id, path),
         FOREIGN KEY (dataset_id) REFERENCES datasets(id)
     );
     ''')

@@ -3,6 +3,7 @@ import requests
 import argparse
 import subprocess
 import platform
+import json
 
 def get_total_size(extension,directory):
     total_size = 0
@@ -170,5 +171,21 @@ if sample_info_stored == "filename":
                 update_database_json.append({"raw_file": file,"sample_id":'', "patient_id": data["ext_patient_id"],"dataset_id":dataset_id,"project_id":project_id})
                 break
 
+# Define the data as a Python list of dictionaries
+data = [
+    {
+        "dataset_id": 1,
+        "path": "tracker/westn/raw/agrf67565_sample_id_abc1113.fastq",
+        "metadata": [
+            {"metadata_key": "size", "metadata_value": "13MB"}
+        ]
+    }
+]
+
+# Convert the data to a JSON string
+json_data = json.dumps(data, indent=2)
+
+# Print the JSON string
+print(json_data)
 
 print(update_database_json)
