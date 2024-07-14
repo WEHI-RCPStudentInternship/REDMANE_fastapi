@@ -218,6 +218,7 @@ def init_db():
 # Call the function to initialize the database
 init_db()
 
+
 # Pydantic model for Project
 class Project(BaseModel):
     id: int
@@ -287,7 +288,12 @@ class SampleWithoutPatient(BaseModel):
     ext_sample_url: str
     metadata: List[SampleMetadata] = []
 
-
+class RawFileResponse(BaseModel):
+    id: int
+    path: str
+    sample_id: Optional[str] = None
+    ext_sample_id: Optional[str] = None
+    sample_metadata: Optional[List[SampleMetadata]] = None
 
 # Pydantic model for Patient with Samples
 class PatientWithSamples(PatientWithMetadata):
@@ -983,7 +989,54 @@ async def get_dataset_with_metadata(dataset_id: int, project_id: int):
     except sqlite3.Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+@app.get("/raw_files_with_metadata/{dataset_id}", response_model=List[RawFileResponse])
+async def get_raw_files_with_metadata(dataset_id: int):
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    
+    # Query to get raw files and their associated metadata
+    query = """
+    SELECT rf.id, rf.path, rfm.metadata_value AS sample_id, s.ext_sample_id
+    FROM raw_files rf
+    LEFT JOIN raw_files_metadata rfm ON rf.id = rfm.raw_file_id
+    LEFT JOIN samples s ON rfm.metadata_value = s.id
+    WHERE rf.dataset_id = ? AND rfm.metadata_key = 'sample_id'
+    """
+    cursor.execute(query, (dataset_id,))
+    raw_files = cursor.fetchall()
 
+    response = []
+    
+    for raw_file in raw_files:
+        raw_file_id, path, sample_id, ext_sample_id = raw_file
+        
+        # Fetch sample metadata
+        cursor.execute("SELECT id, sample_id, key, value FROM samples_metadata WHERE sample_id = ?", (sample_id,))
+        sample_metadata_rows = cursor.fetchall()
+
+        sample_metadata_list = []
+        for row in sample_metadata_rows:
+            sample_metadata_list.append({
+                'id': row[0],
+                'sample_id': row[1],
+                'key': row[2],
+                'value': row[3]
+                
+
+            }) 
+        print(sample_metadata_list)
+
+
+        response.append(RawFileResponse(
+            id=raw_file_id,
+            path=path,
+            sample_id=sample_id,
+            ext_sample_id=ext_sample_id,
+            sample_metadata=sample_metadata_list
+        ))
+
+    conn.close()
+    return response
 
 # Run the app using Uvicorn server
 if __name__ == "__main__":

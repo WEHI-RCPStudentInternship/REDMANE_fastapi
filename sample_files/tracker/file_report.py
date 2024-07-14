@@ -174,14 +174,14 @@ if sample_info_stored == "filename":
 # Define the data as a Python list of dictionaries
 data = [
     {
-        "dataset_id": 1,
+        "dataset_id": 2,
         "path": "tracker/westn/raw/agrf67565_sample_id_abc1113.fastq",
         "metadata": [
             {"metadata_key": "sample_id", "metadata_value": "27"}
         ]
     },
     {
-        "dataset_id": 1,
+        "dataset_id": 2,
         "path": "tracker/westn/raw/agrf67565_sample_id_abc1114.fastq",
         "metadata": [
             {"metadata_key": "sample_id", "metadata_value": "28"}
