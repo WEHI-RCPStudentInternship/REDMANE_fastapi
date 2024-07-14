@@ -165,34 +165,10 @@ if sample_info_stored == "filename":
         status = "Not found"
         for data in sample_data:
             if data["ext_sample_id"] in file:
-                update_database_json.append({"raw_file": file,"sample_id":data["sample_id"],"dataset_id":dataset_id,"project_id":project_id})
+                update_database_json.append({"path": file,"dataset_id":dataset_id,"metadata":[{"metadata_key": "sample_id","metadata_value":str(data["sample_id"])}]})
             elif check_patient_in_filename(file, data["ext_patient_id"]):
                 status = "patient_found"
-                update_database_json.append({"raw_file": file,"sample_id":'', "patient_id": data["ext_patient_id"],"dataset_id":dataset_id,"project_id":project_id})
+                update_database_json.append({"path": file,"dataset_id":dataset_id,"metadata":[{"metadata_key": "sample_id","metadata_value":str(data["sample_id"])}]})
                 break
 
-# Define the data as a Python list of dictionaries
-data = [
-    {
-        "dataset_id": 2,
-        "path": "tracker/westn/raw/agrf67565_sample_id_abc1113.fastq",
-        "metadata": [
-            {"metadata_key": "sample_id", "metadata_value": "27"}
-        ]
-    },
-    {
-        "dataset_id": 2,
-        "path": "tracker/westn/raw/agrf67565_sample_id_abc1114.fastq",
-        "metadata": [
-            {"metadata_key": "sample_id", "metadata_value": "28"}
-        ]
-    }
-]
-
-# Convert the data to a JSON string
-json_data = json.dumps(data, indent=2)
-
-# Print the JSON string
-print(json_data)
-
-print(update_database_json)
+print(json.dumps(update_database_json,indent=2))
