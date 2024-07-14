@@ -4,6 +4,15 @@ import argparse
 import subprocess
 import platform
 
+def get_total_size(extension,directory):
+    total_size = 0
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            if file.endswith(extension):
+                file_path = os.path.join(root, file)
+                total_size += os.path.getsize(file_path)
+    return total_size
+
 def find_files(directory, extension=".fastq"):
     """
     Recursively search for files with the given extension in the specified directory.
@@ -103,6 +112,11 @@ dataset_metadata = get_dataset_metadata(url)
 sample_info_stored = dataset_metadata["sample_info_stored"]
 raw_file_extensions = dataset_metadata["raw_file_extensions"]
 extension = raw_file_extensions.lstrip("*")  # Remove the asterisk to get the actual extension
+
+total_size_bytes = get_total_size(extension,directory_to_search)
+total_size_mb = total_size_bytes / (1024 * 1024)
+print(f"Total size of files with extension '{extension}': {total_size_mb:.2f} MB")
+
 
 # Run the command and capture the output
 # Check the operating system
