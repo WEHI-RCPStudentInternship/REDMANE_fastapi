@@ -177,7 +177,14 @@ data = [
         "dataset_id": 1,
         "path": "tracker/westn/raw/agrf67565_sample_id_abc1113.fastq",
         "metadata": [
-            {"metadata_key": "size", "metadata_value": "13MB"}
+            {"metadata_key": "sample_id", "metadata_value": "27"}
+        ]
+    },
+    {
+        "dataset_id": 1,
+        "path": "tracker/westn/raw/agrf67565_sample_id_abc1114.fastq",
+        "metadata": [
+            {"metadata_key": "sample_id", "metadata_value": "28"}
         ]
     }
 ]
