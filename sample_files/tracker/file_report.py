@@ -1,3 +1,4 @@
+from datetime import datetime
 import os,re
 import requests
 import argparse
@@ -132,16 +133,20 @@ else:
 
 result = subprocess.run(command, capture_output=True, text=True)
 
-# Print the output
-print("-------------------")
-print(directory_to_search)
-print(result.stdout)
-print("-------------------")
+# Get today's date
+today_date = datetime.now().strftime('%Y-%m-%d')
+
+update_dataset_metadata_size = {
+        "dataset_id": dataset_id,
+        "raw_file_size": str(int(total_size_mb))+"MB" ,
+        "last_size_update": today_date
+    }
+
 
 # Find files
 found_files = find_files(directory_to_search, extension)
 
-update_database_json = [] 
+update_raw_files = [] 
 
 if sample_info_stored == "header":
     # Print the found files
@@ -156,7 +161,7 @@ if sample_info_stored == "header":
         for data in sample_data:
             if data["ext_sample_id"] in components:
                 status = "sample_found"
-                update_database_json.append({"raw_file": file.name,"sample_id":data["sample_id"],"dataset_id":dataset_id,"project_id":project_id})
+                update_raw_files.append({"raw_file": file.name,"sample_id":data["sample_id"],"dataset_id":dataset_id,"project_id":project_id})
                 
 
 if sample_info_stored == "filename":
@@ -165,10 +170,13 @@ if sample_info_stored == "filename":
         status = "Not found"
         for data in sample_data:
             if data["ext_sample_id"] in file:
-                update_database_json.append({"path": file,"dataset_id":dataset_id,"metadata":[{"metadata_key": "sample_id","metadata_value":str(data["sample_id"])}]})
+                update_raw_files.append({"path": file,"dataset_id":dataset_id,"metadata":[{"metadata_key": "sample_id","metadata_value":str(data["sample_id"])}]})
             elif check_patient_in_filename(file, data["ext_patient_id"]):
                 status = "patient_found"
-                update_database_json.append({"path": file,"dataset_id":dataset_id,"metadata":[{"metadata_key": "sample_id","metadata_value":str(data["sample_id"])}]})
+                update_raw_files.append({"path": file,"dataset_id":dataset_id,"metadata":[{"metadata_key": "sample_id","metadata_value":str(data["sample_id"])}]})
                 break
 
-print(json.dumps(update_database_json,indent=2))
+print(json.dumps(update_raw_files,indent=2))
+print(json.dumps(update_dataset_metadata_size,indent=2))
+
+
