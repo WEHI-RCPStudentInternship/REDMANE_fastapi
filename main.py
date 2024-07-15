@@ -1038,6 +1038,62 @@ async def get_raw_files_with_metadata(dataset_id: int):
     conn.close()
     return response
 
+class MetadataUpdate(BaseModel):
+    dataset_id: int
+    raw_file_size: str
+    last_size_update: str
+
+@app.put("/datasets_metadata/size_update", response_model=MetadataUpdate)
+def update_metadata(update: MetadataUpdate):
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+    
+    # Update record with key 'raw_file_extension_size_of_all_files' for the given dataset_id
+    if update.raw_file_size:
+        cursor.execute(
+            "SELECT id, value FROM datasets_metadata WHERE key = 'raw_file_extension_size_of_all_files' AND dataset_id = ?",
+            (update.dataset_id,)
+        )
+        record = cursor.fetchone()
+        if record:
+            record_id, value_str = record
+            # Update the metadata with the new value
+            cursor.execute(
+                "UPDATE datasets_metadata SET value = ? WHERE id = ?",
+                (update.raw_file_size, record_id)
+            )
+        else:
+            # Insert a new record if it doesn't exist
+            cursor.execute(
+                "INSERT INTO datasets_metadata (dataset_id, key, value) VALUES (?, 'raw_file_extension_size_of_all_files', ?)",
+                (update.dataset_id, update.raw_file_size))
+            
+    
+    # Update record with key 'last_size_update' for the given dataset_id
+    if update.last_size_update:
+        cursor.execute(
+            "SELECT id, value FROM datasets_metadata WHERE key = 'last_size_update' AND dataset_id = ?",
+            (update.dataset_id,)
+        )
+        record = cursor.fetchone()
+        if record:
+            record_id, value_str = record
+            # Update the metadata with the new value
+            cursor.execute(
+                "UPDATE datasets_metadata SET value = ? WHERE id = ?",
+                (update.last_size_update, record_id)
+            )
+        else:
+            # Insert a new record if it doesn't exist
+            cursor.execute(
+                "INSERT INTO datasets_metadata (dataset_id, key, value) VALUES (?, 'last_size_update', ?)",
+                (update.dataset_id, update.last_size_update))
+    
+    conn.commit()
+    conn.close()
+
+    return update
+
 # Run the app using Uvicorn server
 if __name__ == "__main__":
     import uvicorn
