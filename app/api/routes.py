@@ -18,6 +18,7 @@ from app.schemas.schemas import (
     SampleMetadata,
     Sample,
     SampleWithoutPatient,
+    SampleWithMetadataCount,
     FileResponse,
     PatientWithSamples,
     FileMetadataCreate,
@@ -29,10 +30,10 @@ from app.schemas.schemas import (
 )
 
 # Replace with your actual connection details
-DB_NAME = "readmedatabase"
+DB_NAME = "redmane"
 DB_USER = "postgres"
 DB_PASSWORD = "password"
-DB_HOST = "db"
+DB_HOST = "localhost"
 DB_PORT = "5432"
 
 router = APIRouter()
@@ -272,9 +273,55 @@ async def get_patients_metadata(project_id: int, patient_id: int):
     except Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+@router.get("/samples/", response_model=List[SampleWithMetadataCount])
+async def get_samples(
+        patient_id: Optional[int] = Query(None, description="Filter by patient ID")
+):
+    """
+    Fetch all samples (optionally filtered by patient_id) with a count of how many metadata entries they have.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        query = """
+            SELECT s.id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
+                   p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
+            FROM samples s
+            LEFT JOIN patients p ON s.patient_id = p.id
+        """
+
+        params = []
+        if patient_id is not None:
+            query += " WHERE s.patient_id = %s"
+            params.append(patient_id)
+        query += " ORDER BY s.id"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+        samples = []
+        for row in rows:
+            samples.append({
+                'id': row[0],
+                'patient_id': row[1],
+                'ext_sample_id': row[2],
+                'ext_sample_url': row[3],
+                'patient': {
+                    'id': row[4],
+                    'project_id': row[5],
+                    'ext_patient_id': row[6],
+                    'ext_patient_url': row[7],
+                    'public_patient_id': row[8],
+                },
+                'metadata': [],  # populate if needed
+                'metadata_count': 0
+            })
+        return samples
+    except Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 @router.get("/samples/{sample_id}", response_model=List[Sample])
-async def get_samples_per_patient(sample_id: int, project_id: int):
+async def get_samples_per_sample_id(sample_id: int, project_id: int):
     """
     Fetch samples (and their metadata) for a given project_id, optionally filtering by sample_id.
     """

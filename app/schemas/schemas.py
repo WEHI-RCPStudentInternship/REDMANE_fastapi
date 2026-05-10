@@ -96,6 +96,8 @@ class SampleWithoutPatient(BaseModel):
 class PatientWithSamples(PatientWithMetadata):
     samples: List[SampleWithoutPatient] = []
 
+class SampleWithMetadataCount(Sample):
+    metadata_count: int
 
 # =====================
 # File Schemas
