@@ -465,6 +465,27 @@ async def get_projects():
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+@router.get("/download/{project_id}/patients_metadata")
+def get_patients_metadata_per_project(project_id: int):
+    """
+    Download a project's patient metadata:
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        query = """
+            SELECT * FROM patients LEFT JOIN patients_metadata ON patients.id = patients_metadata.patient_id WHERE project_id = %s;
+        """
+        cursor.execute(query, (project_id,))
+        patients_metadata_query = cursor.fetchall()
+        print(patients_metadata_query)
+    except Error as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @router.get("/projects/{project_id}/summary", response_model=ProjectSummary)
 def get_project_summary(project_id: int):
     """
