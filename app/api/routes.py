@@ -5,8 +5,12 @@ import json
 import psycopg2
 from psycopg2.extras import execute_values
 from psycopg2 import Error
+
+# This is for downloading excel file
 from fastapi.responses import FileResponse
 import pandas as pd
+from io import BytesIO
+from fastapi.responses import StreamingResponse
 
 from app.schemas.schemas import (
     FileCreate,
@@ -494,6 +498,18 @@ def get_patients_metadata_per_project(project_id: int):
         
         # Flatten column names (removes the MultiIndex from pivot_table)
         df_pivoted.columns.name = None
+
+        # Write to BytesIO buffer (in-memory)
+        buffer = BytesIO()
+        df_pivoted.to_excel(buffer, sheet_name="Patients", index=False)
+        buffer.seek(0)
+        
+        # Return as streaming response
+        return StreamingResponse(
+            iter([buffer.getvalue()]),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": "attachment; filename=patients_metadata.xlsx"}
+        )
 
     except Error as e:
         import traceback
