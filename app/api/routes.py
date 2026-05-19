@@ -5,6 +5,9 @@ import json
 import psycopg2
 from psycopg2.extras import execute_values
 from psycopg2 import Error
+from fastapi.responses import FileResponse
+import pandas as pd
+
 from app.schemas.schemas import (
     FileCreate,
     Project,
@@ -479,7 +482,19 @@ def get_patients_metadata_per_project(project_id: int):
         """
         cursor.execute(query, (project_id,))
         patients_metadata_query = cursor.fetchall()
-        print(patients_metadata_query)
+        columns = ['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id', 'metadata_id', 'patient_id_fk', 'key', 'value']
+        df = pd.DataFrame(patients_metadata_query, columns=columns)
+
+        df_pivoted = df.pivot_table(
+            index=['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id'],
+            columns='key',
+            values='value',
+            aggfunc='first'
+        ).reset_index()
+        
+        # Flatten column names (removes the MultiIndex from pivot_table)
+        df_pivoted.columns.name = None
+
     except Error as e:
         import traceback
         traceback.print_exc()
