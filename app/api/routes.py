@@ -472,7 +472,7 @@ async def get_projects():
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-@router.get("/download/{project_id}/patients_metadata")
+@router.get("/download/patients_metadata/{project_id}")
 def get_patients_metadata_per_project(project_id: int):
     """
     Download a project's patient metadata:
