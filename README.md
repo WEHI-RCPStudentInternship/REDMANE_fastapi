@@ -7,6 +7,7 @@ The REDMANE Data Registry is a web application using a FastAPI backend with a Po
 - **Docker Orchestration**: [REDMANE_Docker](https://github.com/WEHI-RCPStudentInternship/REDMANE_Docker)
 - **Frontend**: [REDMANE_react.js](https://github.com/WEHI-RCPStudentInternship/REDMANE_react.js)
 - **Database Schemas & Seed Data**: [REDMANE_fastapi_public_data](https://github.com/WEHI-RCPStudentInternship/REDMANE_fastapi_public_data)
+- **Metadata File Creation**: [REDMANE-metadata-generator-with-RO-Crate](https://github.com/WEHI-RCPStudentInternship/REDMANE-metadata-generator-with-RO-Crate)
 
 ## Features
 - **Authentication**: Keycloak SSO integration with JWT token verification
