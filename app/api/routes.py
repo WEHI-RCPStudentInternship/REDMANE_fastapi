@@ -891,8 +891,30 @@ def _process_files(cursor, file_list: list, file_type_name: str, dataset_id: int
     return count, total_size
 
 
-def convert_patient_metadata_to_df():
-    pass
+def convert_patient_metadata_to_df(patients_metadata_query):
+    columns = ['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id', 'metadata_id', 'patient_id_fk', 'key', 'value']
+
+    df = pd.DataFrame(patients_metadata_query, columns=columns)
+
+    # Separate patients without metadata
+    patients_no_metadata = df[df['key'].isna()][['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id']].drop_duplicates()
+
+    df_pivoted = df.pivot_table(
+        index=['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id'],
+        columns='key',
+        values='value',
+        aggfunc='first'
+    ).reset_index()
+
+    
+    # Flatten column names (removes the MultiIndex from pivot_table)
+    df_pivoted.columns.name = None
+
+    df_final = pd.concat([df_pivoted, patients_no_metadata], ignore_index=False).reset_index(drop=True)
+
+
+    return df_final
+
 
 @router.post("/ingest/upload_patient_sample_metadata")
 async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = File(...)):
@@ -923,7 +945,7 @@ async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = F
         for item in ingestion_data:
             print(item)            
 
-        print(patient_id_list)
+        # Get existing information for comparison
         conn = None
         try:
             conn = get_connection()
@@ -940,28 +962,10 @@ async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = F
             cursor.execute(query, (project_id, *patient_id_list))
             existing_patients_metadata_query = cursor.fetchall() 
 
-            columns = ['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id', 'metadata_id', 'patient_id_fk', 'key', 'value']
-
-            existing_df = pd.DataFrame(existing_patients_metadata_query, columns=columns)
-
-            # Separate patients without metadata
-            patients_no_metadata = existing_df[existing_df['key'].isna()][['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id']].drop_duplicates()
-
-            existing_df_pivoted = existing_df.pivot_table(
-                index=['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id'],
-                columns='key',
-                values='value',
-                aggfunc='first'
-            ).reset_index()
-
-            
-            # Flatten column names (removes the MultiIndex from pivot_table)
-            existing_df_pivoted.columns.name = None
-
-            existing_df_final = pd.concat([existing_df_pivoted, patients_no_metadata], ignore_index=False).reset_index(drop=True)
+            existing_df_final = convert_patient_metadata_to_df(existing_patients_metadata_query)
 
             print(existing_df_final)
-
+            
         except Exception as e:
             raise HTTPException(status_code=400, detail="Invalid query to find old version.")
     except Exception as e:
