@@ -924,9 +924,8 @@ async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = F
             ingestion_data.append(row_dict)
             patient_id_list.append(row_dict['id'])
 
-        # Now print to see the result
-        for item in ingestion_data:
-            print(item)            
+        new_df = pd.DataFrame(ingestion_data)
+        print(new_df)
 
         # Get existing information for comparison
         conn = None
@@ -945,15 +944,33 @@ async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = F
             cursor.execute(query, (project_id, *patient_id_list))
             existing_patients_metadata_query = cursor.fetchall() 
 
-            existing_df_final = convert_patient_metadata_to_df(existing_patients_metadata_query)
+            existing_df = convert_patient_metadata_to_df(existing_patients_metadata_query)
 
-            print(existing_df_final)
+            print(existing_df)
             
         except Exception as e:
             raise HTTPException(status_code=400, detail="Invalid query to find old version.")
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid file format. Please upload a valid Excel file.")
 
+    new_df = new_df.fillna('-')
+    existing_df = existing_df.fillna('-')
+
+    # Merge on 'id' to compare same rows
+    merged = new_df.merge(existing_df, on='id', suffixes=('_new_df', '_existing_df'))
+
+    # Separate the two sets of columns
+    new_cols = [col for col in merged.columns if col.endswith('_new_df')]
+    existing_cols = [col for col in merged.columns if col.endswith('_existing_df')]
+
+    # Compare only matching columns
+    diff_mask = False
+    for new_col, existing_col in zip(new_cols, existing_cols):
+        diff_mask = diff_mask | (merged[new_col] != merged[existing_col])
+
+    diff_rows = merged[diff_mask]
+    pd.set_option('display.max_columns', None)
+    print(diff_rows)
 
     return {
         "status": "success",
