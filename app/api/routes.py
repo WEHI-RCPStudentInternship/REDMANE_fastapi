@@ -40,7 +40,7 @@ from app.schemas.schemas import (
 DB_NAME = "redmane"
 DB_USER = "postgres"
 DB_PASSWORD = "password"
-DB_HOST = "localhost"
+DB_HOST = "/tmp"
 DB_PORT = "5432"
 
 router = APIRouter()
@@ -889,6 +889,89 @@ def _process_files(cursor, file_list: list, file_type_name: str, dataset_id: int
         )
 
     return count, total_size
+
+
+def convert_patient_metadata_to_df():
+    pass
+
+@router.post("/ingest/upload_patient_sample_metadata")
+async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = File(...)):
+    '''
+    Read from excel file containing patient and sample metadata information and upload into database. Returns a summary of upload information
+    '''
+    try:
+        contents = await file.read()
+        # For openpyxl (works with .xlsx files)
+        from openpyxl import load_workbook
+        from io import BytesIO
+        
+        workbook = load_workbook(BytesIO(contents))
+        worksheet = workbook.active
+        
+        # Get the header row (first row)
+        headers = [cell.value for cell in worksheet[1]]
+
+        # Extract all data rows as dictionaries
+        ingestion_data = []
+        patient_id_list = []
+        for row in worksheet.iter_rows(min_row=2, values_only=True):
+            row_dict = dict(zip(headers, row))
+            ingestion_data.append(row_dict)
+            patient_id_list.append(row_dict['id'])
+
+        # Now print to see the result
+        for item in ingestion_data:
+            print(item)            
+
+        print(patient_id_list)
+        conn = None
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            placeholders = ','.join(['%s'] * len(patient_id_list))
+            
+            query = f"""
+                SELECT * FROM patients 
+                LEFT JOIN patients_metadata ON patients.id = patients_metadata.patient_id 
+                WHERE project_id = %s AND patients.id IN ({placeholders});
+            """
+            
+            # Pass project_id first, then unpack the list
+            cursor.execute(query, (project_id, *patient_id_list))
+            existing_patients_metadata_query = cursor.fetchall() 
+
+            columns = ['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id', 'metadata_id', 'patient_id_fk', 'key', 'value']
+
+            existing_df = pd.DataFrame(existing_patients_metadata_query, columns=columns)
+
+            # Separate patients without metadata
+            patients_no_metadata = existing_df[existing_df['key'].isna()][['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id']].drop_duplicates()
+
+            existing_df_pivoted = existing_df.pivot_table(
+                index=['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id'],
+                columns='key',
+                values='value',
+                aggfunc='first'
+            ).reset_index()
+
+            
+            # Flatten column names (removes the MultiIndex from pivot_table)
+            existing_df_pivoted.columns.name = None
+
+            existing_df_final = pd.concat([existing_df_pivoted, patients_no_metadata], ignore_index=False).reset_index(drop=True)
+
+            print(existing_df_final)
+
+        except Exception as e:
+            raise HTTPException(status_code=400, detail="Invalid query to find old version.")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid file format. Please upload a valid Excel file.")
+
+
+    return {
+        "status": "success",
+        "message": f"Succesfully ingested patient and sample metadata",
+    }
 
 
 @router.post("/ingest/upload_file_metadata")
