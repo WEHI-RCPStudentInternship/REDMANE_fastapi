@@ -486,25 +486,8 @@ def get_patients_metadata_per_project(project_id: int):
         """
         cursor.execute(query, (project_id,))
         patients_metadata_query = cursor.fetchall()
-        columns = ['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id', 'metadata_id', 'patient_id_fk', 'key', 'value']
 
-        df = pd.DataFrame(patients_metadata_query, columns=columns)
-
-        # Separate patients without metadata
-        patients_no_metadata = df[df['key'].isna()][['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id']].drop_duplicates()
-
-        df_pivoted = df.pivot_table(
-            index=['id', 'project_id', 'ext_patient_id', 'ext_patient_url', 'public_patient_id'],
-            columns='key',
-            values='value',
-            aggfunc='first'
-        ).reset_index()
-
-        
-        # Flatten column names (removes the MultiIndex from pivot_table)
-        df_pivoted.columns.name = None
-
-        df_final = pd.concat([df_pivoted, patients_no_metadata], ignore_index=False).reset_index(drop=True)
+        df_final = convert_patient_metadata_to_df(patients_metadata_query)
 
         # Write to BytesIO buffer (in-memory)
         buffer = BytesIO()
