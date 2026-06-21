@@ -925,7 +925,6 @@ async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = F
             patient_id_list.append(row_dict['id'])
 
         new_df = pd.DataFrame(ingestion_data)
-        print(new_df)
 
         # Get existing information for comparison
         conn = None
@@ -946,8 +945,6 @@ async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = F
 
             existing_df = convert_patient_metadata_to_df(existing_patients_metadata_query)
 
-            print(existing_df)
-            
         except Exception as e:
             raise HTTPException(status_code=400, detail="Invalid query to find old version.")
     except Exception as e:
@@ -971,10 +968,11 @@ async def upload_file_metadata(project_id: int = Form(...), file: UploadFile = F
     diff_rows = merged[diff_mask]
     pd.set_option('display.max_columns', None)
     print(diff_rows)
+    print(len(diff_rows))
 
     return {
         "status": "success",
-        "message": f"Succesfully ingested patient and sample metadata",
+        "message": f"Succesfully ingested patient and sample metadata - {len(diff_rows)} patients were changed"
     }
 
 
