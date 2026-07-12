@@ -1,72 +1,64 @@
-from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import os
 import requests
-import json
-import base64
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
-from cryptography.hazmat.primitives import serialization
+from functools import lru_cache
+from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
 
 router = APIRouter()
 
-# Keycloak configuration
-KEYCLOAK_URL = "http://localhost:8080"  # Your Keycloak server address
-REALM = "WEHI"  # Your Realm name
-CLIENT_ID = "fastapi-client"  # Your Keycloak client ID
+AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
+AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
+AUTH0_ISSUER = os.getenv("AUTH0_ISSUER")
 
-# Configure OAuth2 authentication, FastAPI will automatically parse the Bearer Token from the request
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/token")
+if not AUTH0_DOMAIN:
+    raise RuntimeError("AUTH0_DOMAIN environment variable is not set")
+if not AUTH0_AUDIENCE:
+    raise RuntimeError("AUTH0_AUDIENCE environment variable is not set")
+if not AUTH0_ISSUER:
+    raise RuntimeError("AUTH0_ISSUER environment variable is not set")
 
-
-def get_keycloak_public_key():
-    """ Retrieve the Keycloak public key (JWK to PEM) """
-    jwks_url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/certs"
-    response = requests.get(jwks_url)
-    if response.status_code != 200:
-        raise HTTPException(status_code=500, detail="Failed to fetch Keycloak public key")
-
-    jwks = response.json()
-    if "keys" not in jwks or len(jwks["keys"]) == 0:
-        raise HTTPException(status_code=500, detail="Keycloak did not return any public keys")
-
-    # Retrieve the first key
-    key = jwks["keys"][0]
-
-    # Decode `n` and `e` from Base64 URL
-    n = int.from_bytes(base64.urlsafe_b64decode(key["n"] + "=="), byteorder="big")
-    e = int.from_bytes(base64.urlsafe_b64decode(key["e"] + "=="), byteorder="big")
-
-    # Generate RSA public key
-    public_key = RSAPublicNumbers(e, n).public_key()
-
-    return public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
+bearer_scheme = HTTPBearer()
 
 
-def verify_token(token: str = Security(oauth2_scheme)):
-    """ Verify the JWT Token obtained from Keycloak """
+@lru_cache(maxsize=1)
+def get_jwks():
+    url = f"https://{AUTH0_DOMAIN}/.well-known/jwks.json"
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.json()
+
+
+def get_public_key(token: str):
+    jwks = get_jwks()
+    header = jwt.get_unverified_header(token)
+    key = next((k for k in jwks["keys"] if k["kid"] == header["kid"]), None)
+    if key is None:
+        raise HTTPException(status_code=401, detail="Signing key not found")
+    return key
+
+
+async def verify_token(
+    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
+):
+    token = credentials.credentials
     try:
-        public_key = get_keycloak_public_key()
-        decoded_token = jwt.decode(
+        public_key = get_public_key(token)
+        payload = jwt.decode(
             token,
             public_key,
             algorithms=["RS256"],
-            audience=CLIENT_ID,  # Ensure CLIENT_ID is present as `aud`, if an error occurs, try `options={"verify_aud": False}`
-            options={"verify_aud": False}  # Temporarily disable `audience` verification
+            audience=AUTH0_AUDIENCE,
+            issuer=AUTH0_ISSUER
         )
-        return decoded_token  # Return the decoded Token (containing user information)
-
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid Token")
+        return payload
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
 @router.get("/auth/")
 async def get_user(token: dict = Depends(verify_token)):
-    """ Retrieve user information via Token """
     return {
-        "user_id": token["sub"],
+        "user_id": token.get("sub"),
         "email": token.get("email"),
-        "roles": token.get("realm_access", {}).get("roles", [])
     }

@@ -1,5 +1,6 @@
+import os
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form
+from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form, Depends
 from fastapi.responses import RedirectResponse
 import json
 import psycopg2
@@ -27,16 +28,15 @@ from app.schemas.schemas import (
     ProjectSummary,
     FileWithMetadata
 )
+from app.routers.auth import verify_token
 
-# Replace with your actual connection details
-DB_NAME = "readmedatabase"
-DB_USER = "postgres"
-DB_PASSWORD = "password"
-DB_HOST = "db"
-DB_PORT = "5432"
+DB_NAME = os.getenv("DB_NAME", "readmedatabase")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
+DB_HOST = os.getenv("DB_HOST", "db")
+DB_PORT = os.getenv("DB_PORT", "5432")
 
 router = APIRouter()
-
 
 
 def get_connection():
@@ -51,375 +51,29 @@ def get_connection():
         port=DB_PORT
     )
 
-@router.post("/datasets/")
-async def create_dataset(
-    project_id: int = Form(...),
-    name: str = Form(...),
-    abstract: str = Form(...),
-    site: str = Form(...),
-    location: Optional[str] = Form(None),
-    raw_files: Optional[str] = Form(None),
-    processed_files: Optional[str] = Form(None),
-    summary_files: Optional[str] = Form(None),
-    readme_files: Optional[str] = Form(None)
-):
-    """
-    Create a new dataset entry and insert optional metadata into datasets_metadata.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        # Insert dataset
-        cursor.execute(
-            """
-            INSERT INTO datasets (project_id, name, abstract, site, created_at)
-            VALUES (%s, %s, %s, %s, NOW())
-            RETURNING id
-            """,
-            (project_id, name, abstract, site)
-        )
-        dataset_id = cursor.fetchone()[0]
-
-        # Insert optional metadata only if present
-        metadata_entries = []
-        if raw_files:
-            metadata_entries.append(('raw_files', raw_files))
-        if processed_files:
-            metadata_entries.append(('processed_files', processed_files))
-        if summary_files:
-            metadata_entries.append(('summary_files', summary_files))
-        if readme_files:
-            metadata_entries.append(('readme_files', readme_files))
-        if location:
-            metadata_entries.append(('location', location))
-
-        for key, value in metadata_entries:
-            cursor.execute(
-                """
-                INSERT INTO datasets_metadata (dataset_id, key, value)
-                VALUES (%s, %s, %s)
-                """,
-                (dataset_id, key, value)
-            )
-
-        conn.commit()
-
-        return {
-            "status": "success",
-            "dataset_id": dataset_id,
-            "message": f"Dataset '{name}' created successfully"
-        }
-
-    except Error as e:
-        if conn:
-            conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-@router.post("/add_files/")
-async def add_files(files: List[FileCreate]):
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        file_ids = []
-        for file in files:
-            cursor.execute(
-                """
-                INSERT INTO files (dataset_id, path, file_type)
-                VALUES (%s, %s, %s)
-                RETURNING id
-                """,
-                (file.dataset_id, file.path, file.file_type)
-            )
-            file_id = cursor.fetchone()[0]
-            file_ids.append(file_id)
-
-            if file.metadata:
-                for metadata in file.metadata:
-                    cursor.execute(
-                        """
-                        INSERT INTO files_metadata (file_id, metadata_key, metadata_value)
-                        VALUES (%s, %s, %s)
-                        """,
-                        (file_id, metadata.metadata_key, metadata.metadata_value)
-                    )
-
-        conn.commit()
-        conn.close()
-        return {"status": "success", "message": "Files and metadata added successfully"}
-
-    except Error as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
 
 @router.get("/")
 async def root():
-    
     return RedirectResponse(url="/projects")
 
 
-@router.get("/patients_metadata/{patient_id}", response_model=List[PatientWithSamples])
-async def get_patients_metadata(project_id: int, patient_id: int):
-    """
-    Fetch patients (and their samples + metadata) for a given project_id.
-    If patient_id == 0, fetch all patients; otherwise, fetch the specified patient.
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        if patient_id != 0:
-            cursor.execute(
-                """
-                SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
-                       pm.id, pm.key, pm.value
-                FROM patients p
-                LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
-                WHERE p.project_id = %s AND p.id = %s
-                ORDER BY p.id
-                """,
-                (project_id, patient_id)
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
-                       pm.id, pm.key, pm.value
-                FROM patients p
-                LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
-                WHERE p.project_id = %s
-                ORDER BY p.id
-                """,
-                (project_id,)
-            )
-
-        rows = cursor.fetchall()
-
-        patients = []
-        current_patient = None
-        for row in rows:
-            # row = [p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
-            #        pm.id, pm.key, pm.value]
-            if not current_patient or current_patient['id'] != row[0]:
-                if current_patient:
-                    patients.append(current_patient)
-                current_patient = {
-                    'id': row[0],
-                    'project_id': row[1],
-                    'ext_patient_id': row[2],
-                    'ext_patient_url': row[3],
-                    'public_patient_id': row[4],
-                    'samples': [],
-                    'metadata': []
-                }
-
-            if row[5]:  # pm.id is not None
-                current_patient['metadata'].append({
-                    'id': row[5],
-                    'patient_id': row[0],
-                    'key': row[6],
-                    'value': row[7]
-                })
-
-        if current_patient:
-            patients.append(current_patient)
-
-        # Now fetch samples for each patient
-        for patient in patients:
-            cursor.execute(
-                """
-                SELECT s.id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
-                       sm.id, sm.key, sm.value
-                FROM samples s
-                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
-                WHERE s.patient_id = %s
-                ORDER BY s.id
-                """,
-                (patient['id'],)
-            )
-
-            sample_rows = cursor.fetchall()
-            current_sample = None
-            for sample_row in sample_rows:
-                # sample_row = [s.id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
-                #               sm.id, sm.key, sm.value]
-                if not current_sample or current_sample['id'] != sample_row[0]:
-                    if current_sample:
-                        patient['samples'].append(current_sample)
-                    current_sample = {
-                        'id': sample_row[0],
-                        'patient_id': sample_row[1],
-                        'ext_sample_id': sample_row[2],
-                        'ext_sample_url': sample_row[3],
-                        'metadata': []
-                    }
-                if sample_row[4]:  # sm.id is not None
-                    current_sample['metadata'].append({
-                        'id': sample_row[4],
-                        'sample_id': sample_row[0],
-                        'key': sample_row[5],
-                        'value': sample_row[6]
-                    })
-
-            if current_sample:
-                patient['samples'].append(current_sample)
-
-        conn.close()
-        return patients
-
-    except Error as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-
-@router.get("/samples/{sample_id}", response_model=List[Sample])
-async def get_samples_per_patient(sample_id: int, project_id: int):
-    """
-    Fetch samples (and their metadata) for a given project_id, optionally filtering by sample_id.
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        if sample_id != 0:
-            cursor.execute(
-                """
-                SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
-                       sm.id AS metadata_id, sm.key, sm.value,
-                       p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
-                FROM samples s
-                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
-                LEFT JOIN patients p ON s.patient_id = p.id
-                WHERE p.project_id = %s AND s.id = %s
-                ORDER BY s.id, sm.id
-                """,
-                (project_id, sample_id)
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
-                       sm.id AS metadata_id, sm.key, sm.value,
-                       p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
-                FROM samples s
-                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
-                LEFT JOIN patients p ON s.patient_id = p.id
-                WHERE p.project_id = %s
-                ORDER BY s.id, sm.id
-                """,
-                (project_id,)
-            )
-
-        rows = cursor.fetchall()
-        conn.close()
-
-        samples = []
-        current_sample = None
-
-        for row in rows:
-            # row = [sample_id, patient_id, ext_sample_id, ext_sample_url,
-            #        metadata_id, key, value, pat_id, project_id, ext_pat_id, ext_pat_url, public_pat_id]
-            if not current_sample or current_sample['id'] != row[0]:
-                if current_sample:
-                    samples.append(current_sample)
-                current_sample = {
-                    'id': row[0],
-                    'patient_id': row[1],
-                    'ext_sample_id': row[2],
-                    'ext_sample_url': row[3],
-                    'metadata': [],
-                    'patient': {
-                        'id': row[7],
-                        'project_id': row[8],
-                        'ext_patient_id': row[9],
-                        'ext_patient_url': row[10],
-                        'public_patient_id': row[11]
-                    }
-                }
-
-            if row[4]:  # metadata_id is not None
-                current_sample['metadata'].append({
-                    'id': row[4],
-                    'sample_id': row[0],
-                    'key': row[5],
-                    'value': row[6]
-                })
-
-        if current_sample:
-            samples.append(current_sample)
-
-        return samples
-
-    except Error as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-
-@router.get("/patients/", response_model=List[PatientWithSampleCount])
-async def get_patients(
-        project_id: Optional[int] = Query(None, description="Filter by project ID")
-):
-    """
-    Fetch all patients (optionally filtered by project_id) with a count of how many samples they have.
-    """
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        query = """
-            SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url,
-                   p.public_patient_id, COUNT(s.id) AS sample_count
-            FROM patients p
-            LEFT JOIN samples s ON p.id = s.patient_id
-        """
-        params = []
-
-        if project_id is not None:
-            query += " WHERE p.project_id = %s"
-            params.append(project_id)
-
-        query += " GROUP BY p.id ORDER BY p.id"
-
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        conn.close()
-
-        patients = []
-        for row in rows:
-            patients.append({
-                'id': row[0],
-                'project_id': row[1],
-                'ext_patient_id': row[2],
-                'ext_patient_url': row[3],
-                'public_patient_id': row[4],
-                'sample_count': row[5]
-            })
-
-        return patients
-
-    except Error as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-
 @router.get("/projects/", response_model=List[Project])
-async def get_projects():
+async def get_projects(token: dict = Depends(verify_token)):
     try:
         conn = get_connection()
         cursor = conn.cursor()
-
         cursor.execute("SELECT id, name, status FROM projects")
         rows = cursor.fetchall()
         conn.close()
-
         return [Project(id=row[0], name=row[1], status=row[2]) for row in rows]
-
     except Error as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+
 @router.get("/projects/{project_id}/summary", response_model=ProjectSummary)
-def get_project_summary(project_id: int):
+def get_project_summary(project_id: int, token: dict = Depends(verify_token)):
     """
     Summarize a project's datasets:
       - file_count          : DISTINCT files per dataset
@@ -432,12 +86,10 @@ def get_project_summary(project_id: int):
         conn = get_connection()
         cur = conn.cursor()
 
-        # Project name
         cur.execute("SELECT name FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         project_name = row[0] if row else None
 
-        # Aggregate per-dataset. Only sum file_size rows that are purely numeric (allowing whitespace).
         sql = """
         SELECT
           d.id   AS dataset_id,
@@ -499,10 +151,78 @@ def get_project_summary(project_id: int):
         if conn:
             conn.close()
 
+
+@router.post("/datasets/")
+async def create_dataset(
+    project_id: int = Form(...),
+    name: str = Form(...),
+    abstract: str = Form(...),
+    site: str = Form(...),
+    location: Optional[str] = Form(None),
+    raw_files: Optional[str] = Form(None),
+    processed_files: Optional[str] = Form(None),
+    summary_files: Optional[str] = Form(None),
+    readme_files: Optional[str] = Form(None),
+    token: dict = Depends(verify_token)
+):
+    """
+    Create a new dataset entry and insert optional metadata into datasets_metadata.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            INSERT INTO datasets (project_id, name, abstract, site, created_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            RETURNING id
+            """,
+            (project_id, name, abstract, site)
+        )
+        dataset_id = cursor.fetchone()[0]
+
+        metadata_entries = []
+        if raw_files:
+            metadata_entries.append(('raw_files', raw_files))
+        if processed_files:
+            metadata_entries.append(('processed_files', processed_files))
+        if summary_files:
+            metadata_entries.append(('summary_files', summary_files))
+        if readme_files:
+            metadata_entries.append(('readme_files', readme_files))
+        if location:
+            metadata_entries.append(('location', location))
+
+        for key, value in metadata_entries:
+            cursor.execute(
+                """
+                INSERT INTO datasets_metadata (dataset_id, key, value)
+                VALUES (%s, %s, %s)
+                """,
+                (dataset_id, key, value)
+            )
+
+        conn.commit()
+
+        return {
+            "status": "success",
+            "dataset_id": dataset_id,
+            "message": f"Dataset '{name}' created successfully"
+        }
+
+    except Error as e:
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
 @router.get("/datasets/", response_model=List[Dataset])
 async def get_datasets(
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
-    dataset_id: Optional[int] = Query(None, description="Filter by dataset ID")
+    dataset_id: Optional[int] = Query(None, description="Filter by dataset ID"),
+    token: dict = Depends(verify_token)
 ):
     """
     Fetch datasets, optionally filtered by project_id and/or dataset_id.
@@ -552,8 +272,9 @@ async def get_datasets(
     except Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
+
 @router.get("/datasets_with_metadata/{dataset_id}")
-async def get_dataset_with_metadata(dataset_id: int):
+async def get_dataset_with_metadata(dataset_id: int, token: dict = Depends(verify_token)):
     """
     Fetch dataset details (and its metadata) for the given dataset_id.
     Includes rank_in_project computed per project.
@@ -599,16 +320,286 @@ async def get_dataset_with_metadata(dataset_id: int):
     except Error as e:
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-@router.get("/files_with_metadata/{dataset_id}", response_model=List[FileResponse])
-async def get_files_with_metadata(dataset_id: int):
+
+@router.get("/patients/", response_model=List[PatientWithSampleCount])
+async def get_patients(
+    project_id: Optional[int] = Query(None, description="Filter by project ID"),
+    token: dict = Depends(verify_token)
+):
     """
-    Fetch files within a dataset, along with any related sample metadata (based on sample_id stored as metadata).
+    Fetch all patients (optionally filtered by project_id) with a count of how many samples they have.
     """
     try:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Query files and the sample relationship from files_metadata
+        query = """
+            SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url,
+                   p.public_patient_id, COUNT(s.id) AS sample_count
+            FROM patients p
+            LEFT JOIN samples s ON p.id = s.patient_id
+        """
+        params = []
+
+        if project_id is not None:
+            query += " WHERE p.project_id = %s"
+            params.append(project_id)
+
+        query += " GROUP BY p.id ORDER BY p.id"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        patients = []
+        for row in rows:
+            patients.append({
+                'id': row[0],
+                'project_id': row[1],
+                'ext_patient_id': row[2],
+                'ext_patient_url': row[3],
+                'public_patient_id': row[4],
+                'sample_count': row[5]
+            })
+
+        return patients
+
+    except Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@router.get("/patients_metadata/{patient_id}", response_model=List[PatientWithSamples])
+async def get_patients_metadata(project_id: int, patient_id: int, token: dict = Depends(verify_token)):
+    """
+    Fetch patients (and their samples + metadata) for a given project_id.
+    If patient_id == 0, fetch all patients; otherwise, fetch the specified patient.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if patient_id != 0:
+            cursor.execute(
+                """
+                SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
+                       pm.id, pm.key, pm.value
+                FROM patients p
+                LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
+                WHERE p.project_id = %s AND p.id = %s
+                ORDER BY p.id
+                """,
+                (project_id, patient_id)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT p.id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id,
+                       pm.id, pm.key, pm.value
+                FROM patients p
+                LEFT JOIN patients_metadata pm ON p.id = pm.patient_id
+                WHERE p.project_id = %s
+                ORDER BY p.id
+                """,
+                (project_id,)
+            )
+
+        rows = cursor.fetchall()
+
+        patients = []
+        current_patient = None
+        for row in rows:
+            if not current_patient or current_patient['id'] != row[0]:
+                if current_patient:
+                    patients.append(current_patient)
+                current_patient = {
+                    'id': row[0],
+                    'project_id': row[1],
+                    'ext_patient_id': row[2],
+                    'ext_patient_url': row[3],
+                    'public_patient_id': row[4],
+                    'samples': [],
+                    'metadata': []
+                }
+            if row[5]:
+                current_patient['metadata'].append({
+                    'id': row[5],
+                    'patient_id': row[0],
+                    'key': row[6],
+                    'value': row[7]
+                })
+
+        if current_patient:
+            patients.append(current_patient)
+
+        for patient in patients:
+            cursor.execute(
+                """
+                SELECT s.id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
+                       sm.id, sm.key, sm.value
+                FROM samples s
+                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
+                WHERE s.patient_id = %s
+                ORDER BY s.id
+                """,
+                (patient['id'],)
+            )
+
+            sample_rows = cursor.fetchall()
+            current_sample = None
+            for sample_row in sample_rows:
+                if not current_sample or current_sample['id'] != sample_row[0]:
+                    if current_sample:
+                        patient['samples'].append(current_sample)
+                    current_sample = {
+                        'id': sample_row[0],
+                        'patient_id': sample_row[1],
+                        'ext_sample_id': sample_row[2],
+                        'ext_sample_url': sample_row[3],
+                        'metadata': []
+                    }
+                if sample_row[4]:
+                    current_sample['metadata'].append({
+                        'id': sample_row[4],
+                        'sample_id': sample_row[0],
+                        'key': sample_row[5],
+                        'value': sample_row[6]
+                    })
+
+            if current_sample:
+                patient['samples'].append(current_sample)
+
+        conn.close()
+        return patients
+
+    except Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@router.get("/samples/{sample_id}", response_model=List[Sample])
+async def get_samples_per_patient(sample_id: int, project_id: int, token: dict = Depends(verify_token)):
+    """
+    Fetch samples (and their metadata) for a given project_id, optionally filtering by sample_id.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        if sample_id != 0:
+            cursor.execute(
+                """
+                SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
+                       sm.id AS metadata_id, sm.key, sm.value,
+                       p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
+                FROM samples s
+                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
+                LEFT JOIN patients p ON s.patient_id = p.id
+                WHERE p.project_id = %s AND s.id = %s
+                ORDER BY s.id, sm.id
+                """,
+                (project_id, sample_id)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT s.id AS sample_id, s.patient_id, s.ext_sample_id, s.ext_sample_url,
+                       sm.id AS metadata_id, sm.key, sm.value,
+                       p.id AS patient_id, p.project_id, p.ext_patient_id, p.ext_patient_url, p.public_patient_id
+                FROM samples s
+                LEFT JOIN samples_metadata sm ON s.id = sm.sample_id
+                LEFT JOIN patients p ON s.patient_id = p.id
+                WHERE p.project_id = %s
+                ORDER BY s.id, sm.id
+                """,
+                (project_id,)
+            )
+
+        rows = cursor.fetchall()
+        conn.close()
+
+        samples = []
+        current_sample = None
+
+        for row in rows:
+            if not current_sample or current_sample['id'] != row[0]:
+                if current_sample:
+                    samples.append(current_sample)
+                current_sample = {
+                    'id': row[0],
+                    'patient_id': row[1],
+                    'ext_sample_id': row[2],
+                    'ext_sample_url': row[3],
+                    'metadata': [],
+                    'patient': {
+                        'id': row[7],
+                        'project_id': row[8],
+                        'ext_patient_id': row[9],
+                        'ext_patient_url': row[10],
+                        'public_patient_id': row[11]
+                    }
+                }
+            if row[4]:
+                current_sample['metadata'].append({
+                    'id': row[4],
+                    'sample_id': row[0],
+                    'key': row[5],
+                    'value': row[6]
+                })
+
+        if current_sample:
+            samples.append(current_sample)
+
+        return samples
+
+    except Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@router.post("/add_files/")
+async def add_files(files: List[FileCreate], token: dict = Depends(verify_token)):
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        file_ids = []
+        for file in files:
+            cursor.execute(
+                """
+                INSERT INTO files (dataset_id, path, file_type)
+                VALUES (%s, %s, %s)
+                RETURNING id
+                """,
+                (file.dataset_id, file.path, file.file_type)
+            )
+            file_id = cursor.fetchone()[0]
+            file_ids.append(file_id)
+
+            if file.metadata:
+                for metadata in file.metadata:
+                    cursor.execute(
+                        """
+                        INSERT INTO files_metadata (file_id, metadata_key, metadata_value)
+                        VALUES (%s, %s, %s)
+                        """,
+                        (file_id, metadata.metadata_key, metadata.metadata_value)
+                    )
+
+        conn.commit()
+        conn.close()
+        return {"status": "success", "message": "Files and metadata added successfully"}
+
+    except Error as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+
+@router.get("/files_with_metadata/{dataset_id}", response_model=List[FileResponse])
+async def get_files_with_metadata(dataset_id: int, token: dict = Depends(verify_token)):
+    """
+    Fetch files within a dataset, along with any related sample metadata.
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
         query = """
             SELECT f.id, f.path, fm.metadata_value AS sample_id, s.ext_sample_id
             FROM files f
@@ -622,7 +613,6 @@ async def get_files_with_metadata(dataset_id: int):
         response = []
 
         for (file_id, path, sample_id, ext_sample_id) in files:
-            # Fetch sample metadata
             cursor.execute(
                 """
                 SELECT id, sample_id, key, value
@@ -657,76 +647,39 @@ async def get_files_with_metadata(dataset_id: int):
 
 
 @router.put("/datasets_metadata/size_update", response_model=MetadataUpdate)
-def update_metadata(update: MetadataUpdate):
+def update_metadata(update: MetadataUpdate, token: dict = Depends(verify_token)):
     """
-    Update specific metadata fields in the datasets_metadata table:
-      - file_extension_size_of_all_files
-      - last_size_update
-    for the given dataset_id.
+    Update specific metadata fields in the datasets_metadata table.
     """
     try:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # 1) Update or insert 'file_extension_size_of_all_files'
         if update.file_size:
             cursor.execute(
-                """
-                SELECT id, value
-                FROM datasets_metadata
-                WHERE key = 'file_extension_size_of_all_files'
-                  AND dataset_id = %s
-                """,
+                "SELECT id FROM datasets_metadata WHERE key = 'file_extension_size_of_all_files' AND dataset_id = %s",
                 (update.dataset_id,)
             )
             record = cursor.fetchone()
             if record:
-                record_id, _ = record
-                cursor.execute(
-                    """
-                    UPDATE datasets_metadata
-                    SET value = %s
-                    WHERE id = %s
-                    """,
-                    (update.file_size, record_id)
-                )
+                cursor.execute("UPDATE datasets_metadata SET value = %s WHERE id = %s", (update.file_size, record[0]))
             else:
                 cursor.execute(
-                    """
-                    INSERT INTO datasets_metadata (dataset_id, key, value)
-                    VALUES (%s, 'file_extension_size_of_all_files', %s)
-                    """,
+                    "INSERT INTO datasets_metadata (dataset_id, key, value) VALUES (%s, 'file_extension_size_of_all_files', %s)",
                     (update.dataset_id, update.file_size)
                 )
 
-        # 2) Update or insert 'last_size_update'
         if update.last_size_update:
             cursor.execute(
-                """
-                SELECT id, value
-                FROM datasets_metadata
-                WHERE key = 'last_size_update'
-                  AND dataset_id = %s
-                """,
+                "SELECT id FROM datasets_metadata WHERE key = 'last_size_update' AND dataset_id = %s",
                 (update.dataset_id,)
             )
             record = cursor.fetchone()
             if record:
-                record_id, _ = record
-                cursor.execute(
-                    """
-                    UPDATE datasets_metadata
-                    SET value = %s
-                    WHERE id = %s
-                    """,
-                    (update.last_size_update, record_id)
-                )
+                cursor.execute("UPDATE datasets_metadata SET value = %s WHERE id = %s", (update.last_size_update, record[0]))
             else:
                 cursor.execute(
-                    """
-                    INSERT INTO datasets_metadata (dataset_id, key, value)
-                    VALUES (%s, 'last_size_update', %s)
-                    """,
+                    "INSERT INTO datasets_metadata (dataset_id, key, value) VALUES (%s, 'last_size_update', %s)",
                     (update.dataset_id, update.last_size_update)
                 )
 
@@ -738,21 +691,19 @@ def update_metadata(update: MetadataUpdate):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
-def _process_files(cursor, file_list: list, file_type_name: str, dataset_id: int) -> tuple[int, int]:
-    '''
-    Helper function for file metadata upload which reads a list of files for a specific type (raw/processed/summarised)
-    and returns the results
-    '''
-
+def _process_files(cursor, file_list: list, file_type_name: str, dataset_id: int) -> tuple:
+    """
+    Helper function for file metadata upload which reads a list of files for a specific type
+    (raw/processed/summarised) and returns the results.
+    """
     if not file_list:
-        return (0,0)
-    
-    count = 0 
+        return (0, 0)
+
+    count = 0
     total_size = 0
 
     for file_detail in file_list:
         count += 1
-
         total_size += int(file_detail.get('file_size', 0))
 
         cursor.execute(
@@ -765,7 +716,6 @@ def _process_files(cursor, file_list: list, file_type_name: str, dataset_id: int
         )
 
         file_id = cursor.fetchone()[0]
-
         organization = file_detail.get('organization', 'Unknown')
 
         metadata_to_insert = [
@@ -786,11 +736,15 @@ def _process_files(cursor, file_list: list, file_type_name: str, dataset_id: int
 
 
 @router.post("/ingest/upload_file_metadata")
-async def upload_file_metadata(dataset_id: int = Form(...), file: UploadFile = File(...)):
-    '''
-    Read from json file containing metadata information and upload into database. Returns a summary of upload information
-    '''
-
+async def upload_file_metadata(
+    dataset_id: int = Form(...),
+    file: UploadFile = File(...),
+    token: dict = Depends(verify_token)
+):
+    """
+    Read from json file containing metadata information and upload into database.
+    Returns a summary of upload information.
+    """
     try:
         contents = await file.read()
         decoded_contents = contents.decode('utf-8')
@@ -801,8 +755,6 @@ async def upload_file_metadata(dataset_id: int = Form(...), file: UploadFile = F
     conn = None
 
     try:
-
-        # if data/files and data/file_size_unit don't exist, then we must have incorrect file
         files_by_type = ingestion_data.get('data').get('files')
         file_size_unit = ingestion_data.get('data').get('file_size_unit', 'units')
 
@@ -817,23 +769,20 @@ async def upload_file_metadata(dataset_id: int = Form(...), file: UploadFile = F
 
         for file_type in summary.keys():
             file_list = files_by_type.get(file_type, [])
-
             count, total_size = _process_files(
                 cursor=cursor,
                 file_list=file_list,
                 file_type_name=file_type,
                 dataset_id=dataset_id
             )
-
             summary[file_type]["count"] = count
             summary[file_type]["total_size"] = total_size
-        
+
         conn.commit()
 
-        
         return {
             "status": "success",
-            "message": f"Succesfully ingested files for dataset ID {dataset_id}",
+            "message": f"Successfully ingested files for dataset ID {dataset_id}",
             "summary": {
                 "file_size_unit": file_size_unit,
                 "raw_files": summary["raw"],
@@ -853,15 +802,14 @@ async def upload_file_metadata(dataset_id: int = Form(...), file: UploadFile = F
 
 
 @router.get("/dataset_files_metadata/{dataset_id}", response_model=List[FileWithMetadata])
-async def get_files_with_metadata(dataset_id: int):
+async def get_dataset_files_metadata(dataset_id: int, token: dict = Depends(verify_token)):
     """
-    Fetch files within a dataset, along with the metadata for each file
+    Fetch files within a dataset, along with the metadata for each file.
     """
     try:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Query files and the sample relationship from files_metadata
         query = """
             SELECT file_id, file_type, metadata_key, metadata_value 
             FROM files INNER JOIN files_metadata ON files.id = files_metadata.file_id
@@ -879,14 +827,12 @@ async def get_files_with_metadata(dataset_id: int):
                     "file_type": file_type,
                     "metadata": []
                 }
-
             if metadata_key is not None:
                 files_map[file_id]["metadata"].append(
                     {"metadata_key": metadata_key, "metadata_value": metadata_value}
                 )
 
         conn.close()
-
         return list(files_map.values())
 
     except Error as e:
@@ -894,25 +840,14 @@ async def get_files_with_metadata(dataset_id: int):
 
 
 @router.get("/{datasetId}/external-links")
-async def get_dataset_external_links(datasetId: str):
+async def get_dataset_external_links(datasetId: str, token: dict = Depends(verify_token)):
     """
     Get only metadata entries where key contains "url".
-    
-    Metadata Rules:
-    - Any metadata key containing "url" is treated as an external link
-    - Multiple url_* keys allowed
-    - Values must be strings
-    - URLs must start with "https://" if key contains "url"
-    
-    Returns:
-        - datasetId: The dataset identifier
-        - links: List of external link metadata entries
     """
     try:
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Query only metadata where key contains 'url'
         query = """
             SELECT key, value 
             FROM datasets_metadata 
@@ -928,14 +863,13 @@ async def get_dataset_external_links(datasetId: str):
         for row in link_rows:
             key = row[0]
             url = row[1]
-            
-            # Validate URL format if key contains "url"
+
             if "url" in key.lower() and not url.startswith("https://"):
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail=f"URL for key '{key}' must start with 'https://'"
                 )
-            
+
             links.append({"key": key, "url": url})
 
         conn.close()
