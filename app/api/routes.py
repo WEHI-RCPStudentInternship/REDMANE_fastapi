@@ -1,10 +1,12 @@
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form
+from fastapi import APIRouter, HTTPException, Query, File, UploadFile, Form, Depends
 from fastapi.responses import RedirectResponse
 import json
 import psycopg2
 from psycopg2.extras import execute_values
 from psycopg2 import Error
+import os
+from app.routers.auth import verify_token
 from app.schemas.schemas import (
     FileCreate,
     Project,
@@ -28,12 +30,11 @@ from app.schemas.schemas import (
     FileWithMetadata
 )
 
-# Replace with your actual connection details
-DB_NAME = "readmedatabase"
-DB_USER = "postgres"
-DB_PASSWORD = "password"
-DB_HOST = "db"
-DB_PORT = "5432"
+DB_NAME = os.getenv("DB_NAME", "readmedatabase")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
+DB_HOST = os.getenv("DB_HOST", "db")
+DB_PORT = os.getenv("DB_PORT", "5432")
 
 router = APIRouter()
 
@@ -61,7 +62,8 @@ async def create_dataset(
     raw_files: Optional[str] = Form(None),
     processed_files: Optional[str] = Form(None),
     summary_files: Optional[str] = Form(None),
-    readme_files: Optional[str] = Form(None)
+    readme_files: Optional[str] = Form(None), 
+    token: dict = Depends(verify_token)
 ):
     """
     Create a new dataset entry and insert optional metadata into datasets_metadata.
@@ -161,7 +163,7 @@ async def root():
 
 
 @router.get("/patients_metadata/{patient_id}", response_model=List[PatientWithSamples])
-async def get_patients_metadata(project_id: int, patient_id: int):
+async def get_patients_metadata(project_id: int, patient_id: int, token: dict = Depends(verify_token)):
     """
     Fetch patients (and their samples + metadata) for a given project_id.
     If patient_id == 0, fetch all patients; otherwise, fetch the specified patient.
@@ -274,7 +276,7 @@ async def get_patients_metadata(project_id: int, patient_id: int):
 
 
 @router.get("/samples/{sample_id}", response_model=List[Sample])
-async def get_samples_per_patient(sample_id: int, project_id: int):
+async def get_samples_per_patient(sample_id: int, project_id: int, token: dict = Depends(verify_token)):
     """
     Fetch samples (and their metadata) for a given project_id, optionally filtering by sample_id.
     """
@@ -356,9 +358,7 @@ async def get_samples_per_patient(sample_id: int, project_id: int):
 
 
 @router.get("/patients/", response_model=List[PatientWithSampleCount])
-async def get_patients(
-        project_id: Optional[int] = Query(None, description="Filter by project ID")
-):
+async def get_patients(project_id: Optional[int] = Query(None, description="Filter by project ID"), token: dict = Depends(verify_token)):
     """
     Fetch all patients (optionally filtered by project_id) with a count of how many samples they have.
     """
@@ -402,7 +402,7 @@ async def get_patients(
 
 
 @router.get("/projects/", response_model=List[Project])
-async def get_projects():
+async def get_projects(token: dict = Depends(verify_token)):
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -419,7 +419,7 @@ async def get_projects():
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 @router.get("/projects/{project_id}/summary", response_model=ProjectSummary)
-def get_project_summary(project_id: int):
+def get_project_summary(project_id: int, token: dict = Depends(verify_token)):
     """
     Summarize a project's datasets:
       - file_count          : DISTINCT files per dataset
@@ -464,6 +464,7 @@ def get_project_summary(project_id: int):
         """
         cur.execute(sql, (project_id,))
         rows = cur.fetchall()
+        print(f"Project {project_id} summary row: {rows}", flush=True)
 
         datasets = [
             DatasetSummary(
@@ -502,7 +503,8 @@ def get_project_summary(project_id: int):
 @router.get("/datasets/", response_model=List[Dataset])
 async def get_datasets(
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
-    dataset_id: Optional[int] = Query(None, description="Filter by dataset ID")
+    dataset_id: Optional[int] = Query(None, description="Filter by dataset ID"), 
+    token: dict = Depends(verify_token)
 ):
     """
     Fetch datasets, optionally filtered by project_id and/or dataset_id.
@@ -553,7 +555,7 @@ async def get_datasets(
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 @router.get("/datasets_with_metadata/{dataset_id}")
-async def get_dataset_with_metadata(dataset_id: int):
+async def get_dataset_with_metadata(dataset_id: int, token: dict = Depends(verify_token)):
     """
     Fetch dataset details (and its metadata) for the given dataset_id.
     Includes rank_in_project computed per project.
@@ -600,7 +602,7 @@ async def get_dataset_with_metadata(dataset_id: int):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 @router.get("/files_with_metadata/{dataset_id}", response_model=List[FileResponse])
-async def get_files_with_metadata(dataset_id: int):
+async def get_files_with_metadata(dataset_id: int, token: dict = Depends(verify_token)):
     """
     Fetch files within a dataset, along with any related sample metadata (based on sample_id stored as metadata).
     """
@@ -657,7 +659,7 @@ async def get_files_with_metadata(dataset_id: int):
 
 
 @router.put("/datasets_metadata/size_update", response_model=MetadataUpdate)
-def update_metadata(update: MetadataUpdate):
+def update_metadata(update: MetadataUpdate, token: dict = Depends(verify_token)):
     """
     Update specific metadata fields in the datasets_metadata table:
       - file_extension_size_of_all_files
@@ -786,7 +788,7 @@ def _process_files(cursor, file_list: list, file_type_name: str, dataset_id: int
 
 
 @router.post("/ingest/upload_file_metadata")
-async def upload_file_metadata(dataset_id: int = Form(...), file: UploadFile = File(...)):
+async def upload_file_metadata(dataset_id: int = Form(...), file: UploadFile = File(...), token: dict = Depends(verify_token)):
     '''
     Read from json file containing metadata information and upload into database. Returns a summary of upload information
     '''
@@ -893,8 +895,8 @@ async def get_files_with_metadata(dataset_id: int):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 
-@router.get("/{datasetId}/external-links")
-async def get_dataset_external_links(datasetId: str):
+@router.get("/datasets/{datasetId}/external-links")
+async def get_dataset_external_links(datasetId: str, token: dict = Depends(verify_token)):
     """
     Get only metadata entries where key contains "url".
     

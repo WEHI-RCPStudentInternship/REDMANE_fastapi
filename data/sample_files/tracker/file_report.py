@@ -193,7 +193,7 @@ print(f"Metadata update response: {response.status_code} {response.reason}")
 
 
 # Send POST request to add raw files
-add_raw_files_url = 'http://localhost:8888/add_raw_files/'
+add_raw_files_url = 'http://localhost:8888/add_files/'
 response = requests.post(add_raw_files_url, headers=headers, json=update_raw_files)
 response.raise_for_status()
 print(f"Raw files update response: {response.status_code} {response.reason}")
